@@ -24,6 +24,11 @@ def launch_setup(context, *args, **kwargs):
     pkg_path = os.path.join(get_package_share_directory(package_name))
     xacro_file = os.path.join(pkg_path, 'urdf', 'mobile_robot.urdf.xacro')
     
+    # ✅ Set Gazebo model path to find AWS RoboMaker models
+    models_path = os.path.join(pkg_path, 'models')
+    os.environ['GZ_SIM_RESOURCE_PATH'] = models_path + ':' + os.environ.get('GZ_SIM_RESOURCE_PATH', '')
+    os.environ['IGN_GAZEBO_RESOURCE_PATH'] = models_path + ':' + os.environ.get('IGN_GAZEBO_RESOURCE_PATH', '')
+    
     # ✅ SỬA: Sử dụng worlds trong package
     world_file = os.path.join(pkg_path, 'worlds', world_name)
     
@@ -175,7 +180,7 @@ def generate_launch_description():
 
     world_arg = DeclareLaunchArgument(
         'world',
-        default_value='simple_world.sdf',
+        default_value='small_house.world',
         description='World file name (in worlds folder)'
     )
 

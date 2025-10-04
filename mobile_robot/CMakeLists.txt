@@ -66,7 +66,7 @@ install (
   DESTINATION share/${PROJECT_NAME}
 )
 install (
-  DIRECTORY worlds
+  DIRECTORY worlds photos models 
   DESTINATION share/${PROJECT_NAME}
 )
 
