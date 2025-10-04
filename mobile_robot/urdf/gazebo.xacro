@@ -1,0 +1,142 @@
+<?xml version="1.0" ?>
+<robot name="diff_drive" xmlns:xacro="http://ros.org/wiki/xacro">
+<!--define robot gazebo-->
+        <gazebo reference="chassis">
+        <material>Gazebo/Aluminium</material>
+    </gazebo>
+
+    <gazebo reference="left_wheel">
+        <material>Gazebo/Blue</material>
+    </gazebo>
+
+    <gazebo reference="right_wheel">
+        <material>Gazebo/Blue</material>
+    </gazebo>
+
+        <gazebo reference="above_base_caster">
+        <material>Gazebo/Yellow</material>
+    </gazebo>
+
+    <gazebo reference="right_base_caster">
+        <material>Gazebo/Yellow</material>
+    </gazebo>
+
+        <gazebo reference="left_base_caster">
+        <material>Gazebo/Yellow</material>
+    </gazebo>
+
+        <gazebo reference="back_base_caster">
+        <material>Gazebo/Yellow</material>
+    </gazebo>
+
+        <gazebo reference="caster_wheel">
+        <material>Gazebo/Red</material>
+    </gazebo>
+
+        <gazebo reference="face_link">
+        <material>Gazebo/Red</material>
+    </gazebo>
+
+        <gazebo reference="laser">
+        <material>Gazebo/Orange</material>
+    </gazebo>
+  <!-- Caster wheel -->
+  <gazebo reference="caster_wheel">
+    <mu1>0.0</mu1>
+    <mu2>0.0</mu2>
+
+    <kp>1000000.0</kp>
+    <kd>100.0</kd>
+    <minDepth>0.001</minDepth>
+    <maxVel>1.0</maxVel>
+  </gazebo>
+
+    <!-- LIDAR sensor cho Gazebo Fortress -->
+    <gazebo reference="laser">
+        <sensor name="laser" type="gpu_ray">
+            <gz_frame_id>laser</gz_frame_id>
+            <always_on>true</always_on>
+            <visualize>true</visualize>
+            <update_rate>5</update_rate>
+            <topic>scan</topic>
+            <ray>
+                <scan>
+                    <horizontal>
+                        <samples>720</samples>
+                        <resolution>1</resolution>
+                        <min_angle>-3.14159</min_angle>
+                        <max_angle>3.14159</max_angle>
+                    </horizontal>
+                </scan>
+                <range>
+                    <min>0.12</min>
+                    <max>12.0</max>
+                    <resolution>0.01</resolution>
+                </range>
+                <noise>
+                    <type>gaussian</type>
+                    <mean>0.0</mean>
+                    <stddev>0.01</stddev>
+                </noise>
+            </ray>
+        </sensor>
+    </gazebo>
+    <gazebo>
+    <plugin filename="ignition-gazebo-sensors-system"
+            name="ignition::gazebo::systems::Sensors">
+        <render_engine>ogre2</render_engine>
+    </plugin>
+    </gazebo>
+    <!-- IMU -->
+  <gazebo reference="imu_link">
+    <sensor name="imu" type="imu">
+        <always_on>true</always_on>
+        <update_rate>100</update_rate>
+        <gz_frame_id>imu_link</gz_frame_id>
+        <topic>imu</topic>
+        <imu>
+          <angular_velocity>
+            <x>
+              <noise type="gaussian">
+                <mean>0.0</mean>
+                <stddev>2e-4</stddev>
+              </noise>
+            </x>
+            <y>
+              <noise type="gaussian">
+                <mean>0.0</mean>
+                <stddev>2e-4</stddev>
+              </noise>
+            </y>
+            <z>
+              <noise type="gaussian">
+                <mean>0.0</mean>
+                <stddev>2e-4</stddev>
+              </noise>
+            </z>
+          </angular_velocity>
+          <linear_acceleration>
+            <x>
+              <noise type="gaussian">
+                <mean>0.0</mean>
+                <stddev>1.7e-2</stddev>
+              </noise>
+            </x>
+            <y>
+              <noise type="gaussian">
+                <mean>0.0</mean>
+                <stddev>1.7e-2</stddev>
+              </noise>
+            </y>
+            <z>
+              <noise type="gaussian">
+                <mean>0.0</mean>
+                <stddev>1.7e-2</stddev>
+              </noise>
+            </z>
+          </linear_acceleration>
+        </imu>
+    </sensor>
+  </gazebo>
+
+</robot>

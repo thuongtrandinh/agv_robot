@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<robot name="myrobotagv" xmlns:xacro="http://www.ros.org/wiki/xacro">
+    
+    <xacro:include filename="$(find mobile_robot)/urdf/new_robot_2.xacro"/>
+    <xacro:include filename="$(find mobile_robot)/urdf/gazebo.xacro"/>
+    <xacro:include filename="$(find mobile_robot)/urdf/ros2_control.xacro"/>
+</robot>
