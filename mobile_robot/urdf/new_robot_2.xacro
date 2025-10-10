@@ -393,13 +393,62 @@
         </visual>
     </link>
 
+	<!-- Thân ZED2 (body) -->
+	<link name="zed2_link">
+		<visual>
+			<origin xyz="0 0 0" rpy="0 0 0"/>
+			<geometry>
+				<!-- 146.5 x 30 x 23 mm -->
+				<box size="0.03 0.1465 0.023"/>
+			</geometry>
+			<material name="grey"/>
+		</visual>
+		<collision>
+			<origin xyz="0 0 0" rpy="0 0 0"/>
+			<geometry>
+				<box size="0.03 0.1465 0.023"/>
+			</geometry>
+		</collision>
+		<inertial>
+			<mass value="0.5"/>
+			<origin xyz="0 0 0" rpy="0 0 0"/>
+			<inertia ixx="0.01" iyy="0.01" izz="0.01" ixy="0" ixz="0" iyz="0"/>
+		</inertial>
+	</link>
+
+	<joint name="zed2_joint" type="fixed">
+		<parent link="base_link"/>
+		<child link="zed2_link"/>
+		<!-- đặt phía trước robot -->
+		<origin xyz="0.17 0.0 0.2"/>
+	</joint>
+
+	<!-- Left Camera (U26) -->
+	<link name="zed2_left_camera_frame"/>
+	<joint name="zed2_left_camera_joint" type="fixed">
+		<parent link="zed2_link"/>
+		<child link="zed2_left_camera_frame"/>
+		<!-- 9.3 mm từ mép trái: -0.07325 m so với tâm -->
+		<origin xyz="0 -0.07325 0"/>
+	</joint>
+
+	<!-- Right Camera (U36) -->
+	<link name="zed2_right_camera_frame"/>
+	<joint name="zed2_right_camera_joint" type="fixed">
+		<parent link="zed2_link"/>
+		<child link="zed2_right_camera_frame"/>
+		<!-- 129.3 mm từ mép trái: +0.07325 m so với tâm -->
+		<origin xyz="0 0.07325 0"/>
+	</joint>
+	<!--  End ZED2 -->
+
 	<!-- Imu -->
     <link name="imu_link"/>
     
     <joint name="imu_joint" type="fixed">
-        <parent link="base_link"/>
+        <parent link="zed2_link"/>
         <child link="imu_link"/>
-        <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+        <origin xyz="0 0.05 -0.0115" rpy="0 0 0"/>
     </joint>
     <!-- End IMU -->
 

@@ -24,3 +24,8 @@ ros2 launch agv_controller teleop.launch.py
 - LIDAR: RPLidar A1
 - IMU: 6-DOF
 - UWB: Ultra-Wideband cho định vị indoor
+
+## How to run rplidar
+``` bash
+ros2 launch rplidar_ros rplidar_a2m8_launch.py serial_baudrate:=256000
+```
