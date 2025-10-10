@@ -26,7 +26,7 @@ def generate_launch_description():
     amcl_config_arg = DeclareLaunchArgument(
         "amcl_config",
         default_value=os.path.join(
-            get_package_share_directory("bumperbot_localization"),
+            get_package_share_directory("agv_localization"),
             "config",
             "amcl.yaml"
         ),
@@ -34,7 +34,7 @@ def generate_launch_description():
     )
 
     map_path = PathJoinSubstitution([
-        get_package_share_directory("bumperbot_mapping"),
+        get_package_share_directory("agv_mapping_with_knowns_poses"),
         "maps",
         map_name,
         "map.yaml"
