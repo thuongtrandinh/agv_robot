@@ -14,6 +14,10 @@ find_package(rclcpp_action REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc calib3d highgui aruco)
 find_package(Eigen3 REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
@@ -23,9 +27,15 @@ add_executable(simple_controller src/simple_controller.cpp)
 
 add_executable(twist_relay src/twist_relay.cpp)
 
+add_executable(aruco_detector_sim src/aruco_detector_sim.cpp)
+
 ament_target_dependencies(twist_relay rclcpp geometry_msgs)
 
 ament_target_dependencies(simple_controller rclcpp geometry_msgs sensor_msgs ${Eigen_LIBRARIES})
+
+ament_target_dependencies(aruco_detector_sim rclcpp sensor_msgs geometry_msgs std_msgs visualization_msgs cv_bridge tf2_ros)
+
+target_link_libraries(aruco_detector_sim ${OpenCV_LIBRARIES})
 
 include_directories(
   include
@@ -71,7 +81,7 @@ install (
 )
 
 # Install executables
-install(TARGETS simple_controller twist_relay
+install(TARGETS simple_controller twist_relay aruco_detector_sim
   DESTINATION lib/${PROJECT_NAME})
 
 # Install Python scripts

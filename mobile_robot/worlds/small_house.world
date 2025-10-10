@@ -6,6 +6,51 @@
             <max_step_size>0.01</max_step_size>
         </physics>
 
+
+  <!-- ArUco markers instances -->
+  <model name="aruco_0_instance">
+        <include>
+            <uri>model://aruco_0</uri>
+        </include>
+        <pose>-2.3 1.7 0.25 -1.56 0 1.56</pose>
+  </model>
+
+  <model name="aruco_1_instance">
+        <include>
+            <uri>model://aruco_1</uri>
+        </include>
+        <pose>3.8 -1.2 0.25 -1.56 0 1.56</pose>
+  </model>
+
+  <model name="aruco_2_instance">
+        <include>
+            <uri>model://aruco_2</uri>
+        </include>
+        <pose>-4.1 -2.5 0.25 -1.56 0 1.56</pose>
+  </model>
+
+  <model name="aruco_3_instance">
+        <include>
+            <uri>model://aruco_3</uri>
+        </include>
+        <pose>1.9 4.3 0.25 -1.56 0 1.56</pose>
+  </model>
+
+  <model name="aruco_4_instance">
+        <include>
+            <uri>model://aruco_4</uri>
+        </include>
+        <pose>0.5 -3.7 0.25 -1.56 0 1.56</pose>
+  </model>
+
+  <model name="aruco_5_instance">
+        <include>
+            <uri>model://aruco_5</uri>
+        </include>
+        <pose>-3.2 0.8 0.25 -1.56 0 1.56</pose>
+  </model>
+
+
   <model name='AirconditionerA_01_001'>
         <static>true</static>
         <include>
