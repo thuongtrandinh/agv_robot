@@ -35,6 +35,7 @@
 
   <depend>sensor_msgs</depend>
   <depend>Eigen3</depend>
+  <depend>yaml-cpp</depend>
   <depend>ament_cmake_python</depend>
   <export>
     <build_type>ament_cmake</build_type>

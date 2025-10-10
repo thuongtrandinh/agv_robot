@@ -10,6 +10,7 @@ Panels:
         - /RobotModel1
         - /LaserScan1
         - /Image1
+        - /MarkerArray1
       Splitter Ratio: 0.5
     Tree Height: 361
   - Class: rviz_common/Selection
@@ -108,8 +109,6 @@ Visualization Manager:
               chassis:
                 face_link:
                   {}
-              imu_link:
-                {}
               laser:
                 {}
               left_base_caster:
@@ -121,6 +120,8 @@ Visualization Manager:
               right_wheel:
                 {}
               zed2_link:
+                imu_link:
+                  {}
                 zed2_left_camera_frame:
                   {}
                 zed2_right_camera_frame:
@@ -276,6 +277,18 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /zed2/left/image_raw
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /aruco/markers
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -322,7 +335,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.1567115783691406
+      Distance: 25.0596866607666
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -337,10 +350,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4603980481624603
+      Pitch: 1.5103974342346191
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.493577480316162
+      Yaw: 4.733575344085693
     Saved: ~
 Window Geometry:
   Displays:

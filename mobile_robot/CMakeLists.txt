@@ -5,7 +5,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# find dependencies
+# Dependencies
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(control_msgs REQUIRED)
@@ -15,68 +15,37 @@ find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
+find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core imgproc calib3d highgui aruco)
+find_package(yaml-cpp REQUIRED)
 find_package(Eigen3 REQUIRED)
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# find_package(<dependency> REQUIRED)
 
+# Executables
 add_executable(simple_controller src/simple_controller.cpp)
+ament_target_dependencies(simple_controller rclcpp geometry_msgs sensor_msgs)
 
 add_executable(twist_relay src/twist_relay.cpp)
-
-add_executable(aruco_detector_sim src/aruco_detector_sim.cpp)
-
 ament_target_dependencies(twist_relay rclcpp geometry_msgs)
 
-ament_target_dependencies(simple_controller rclcpp geometry_msgs sensor_msgs ${Eigen_LIBRARIES})
+add_executable(aruco_detector_sim src/aruco_detector_sim.cpp)
+ament_target_dependencies(aruco_detector_sim
+  rclcpp sensor_msgs geometry_msgs std_msgs visualization_msgs
+  cv_bridge tf2 tf2_ros tf2_geometry_msgs
+)
+target_link_libraries(aruco_detector_sim ${OpenCV_LIBRARIES} yaml-cpp)
 
-ament_target_dependencies(aruco_detector_sim rclcpp sensor_msgs geometry_msgs std_msgs visualization_msgs cv_bridge tf2_ros)
-
-target_link_libraries(aruco_detector_sim ${OpenCV_LIBRARIES})
-
+# Includes
 include_directories(
   include
   ${EIGEN3_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
 )
 
-install (
-  DIRECTORY urdf
-  DESTINATION share/${PROJECT_NAME}
-)
-
-install (
-  DIRECTORY launch
-  DESTINATION share/${PROJECT_NAME}
-)
-
-install (
-  DIRECTORY xacro
-  DESTINATION share/${PROJECT_NAME}
-)
-
-install (
-  DIRECTORY config
-  DESTINATION share/${PROJECT_NAME}
-)
-
-install (
-  DIRECTORY src
-  DESTINATION share/${PROJECT_NAME}
-)
-
-install (
-  DIRECTORY include
-  DESTINATION share/${PROJECT_NAME}
-)
-install (
-  DIRECTORY rviz
-  DESTINATION share/${PROJECT_NAME}
-)
-install (
-  DIRECTORY worlds photos models 
+# Install resources
+install(DIRECTORY urdf launch xacro config include rviz worlds photos models maps
   DESTINATION share/${PROJECT_NAME}
 )
 
@@ -92,12 +61,7 @@ install(PROGRAMS
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
-  # the following line skips the linter which checks for copyrights
-  # comment the line when a copyright and license is added to all source files
   set(ament_cmake_copyright_FOUND TRUE)
-  # the following line skips cpplint (only works in a git repo)
-  # comment the line when this package is in a git repo and when
-  # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
