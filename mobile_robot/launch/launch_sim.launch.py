@@ -106,6 +106,11 @@ def launch_setup(context, *args, **kwargs):
             '/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
             '/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
             '/imu@sensor_msgs/msg/Imu[gz.msgs.IMU',
+            
+            '/zed2/left/image_raw@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/zed2/left/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo',
+            '/zed2/right/image_raw@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/zed2/right/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo',
         ],
         parameters=[{'use_sim_time': use_sim_time}],
         output='screen'
