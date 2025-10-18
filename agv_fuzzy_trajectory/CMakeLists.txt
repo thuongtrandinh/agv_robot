@@ -17,6 +17,7 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   agv_fuzzy_trajectory/fuzzy_trajectory_controller.py
   agv_fuzzy_trajectory/test_trajectory_publisher.py
+  agv_fuzzy_trajectory/circle_trajectory_publisher.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -6,7 +6,7 @@ Based on Omrane2016 paper with added S (Small) level = 15mm/s
 
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, TwistStamped
 from nav_msgs.msg import Odometry, Path
 import numpy as np
 from tf_transformations import euler_from_quaternion
@@ -54,8 +54,8 @@ class FuzzyTrajectoryController(Node):
         self.path_sub = self.create_subscription(
             Path, '/trajectory', self.path_callback, 10)
         
-        # Create publisher
-        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        # Create publisher - publish TwistStamped to /diff_cont/cmd_vel for ros2_control
+        self.cmd_vel_pub = self.create_publisher(TwistStamped, '/diff_cont/cmd_vel', 10)
         
         # Create control timer
         timer_period = 1.0 / self.control_frequency
@@ -357,39 +357,58 @@ class FuzzyTrajectoryController(Node):
     def control_loop(self):
         """Main control loop"""
         if not self.path_received or self.current_path is None:
+            self.get_logger().warn('No trajectory received yet!', throttle_duration_sec=2.0)
             return
         
         if len(self.current_path.poses) == 0:
+            self.get_logger().warn('Empty trajectory!', throttle_duration_sec=2.0)
             return
         
-        # Check if goal reached
+        # Compute tracking errors
+        distance_mm, angle_deg = self.compute_errors()
+        
+        self.get_logger().info(
+            f'Robot: ({self.robot_x:.2f}, {self.robot_y:.2f}, {math.degrees(self.robot_theta):.1f}°) | '
+            f'Error: D={distance_mm:.1f}mm, φ={angle_deg:.1f}°',
+            throttle_duration_sec=1.0)
+        
+        # Check if goal reached (use last point of trajectory)
         goal = self.current_path.poses[-1].pose.position
         dist_to_goal = math.sqrt(
             (self.robot_x - goal.x)**2 + (self.robot_y - goal.y)**2)
         
         if dist_to_goal < self.goal_tolerance:
             # Stop the robot
-            cmd_vel = Twist()
-            cmd_vel.linear.x = 0.0
-            cmd_vel.angular.z = 0.0
+            cmd_vel = TwistStamped()
+            cmd_vel.header.stamp = self.get_clock().now().to_msg()
+            cmd_vel.header.frame_id = "base_link"
+            cmd_vel.twist.linear.x = 0.0
+            cmd_vel.twist.angular.z = 0.0
             self.cmd_vel_pub.publish(cmd_vel)
-            self.get_logger().info('Goal reached!', throttle_duration_sec=1.0)
+            self.get_logger().info(f'Goal reached! Distance to goal: {dist_to_goal:.3f}m', throttle_duration_sec=1.0)
             return
-        
-        # Compute tracking errors
-        distance_mm, angle_deg = self.compute_errors()
         
         # Apply fuzzy logic controller
         v_left, v_right = self.fuzzy_inference(distance_mm, angle_deg)
         
+        self.get_logger().info(
+            f'Fuzzy output: VL={v_left*1000:.1f}mm/s, VR={v_right*1000:.1f}mm/s',
+            throttle_duration_sec=1.0)
+        
         # Convert to global velocities
         v, omega = self.wheel_to_global_velocity(v_left, v_right)
         
-        # Publish command
-        cmd_vel = Twist()
-        cmd_vel.linear.x = v
-        cmd_vel.angular.z = omega
+        # Publish command with timestamp (same as keyboard)
+        cmd_vel = TwistStamped()
+        cmd_vel.header.stamp = self.get_clock().now().to_msg()
+        cmd_vel.header.frame_id = "base_link"
+        cmd_vel.twist.linear.x = v
+        cmd_vel.twist.angular.z = omega
         self.cmd_vel_pub.publish(cmd_vel)
+        
+        self.get_logger().info(
+            f'Published: v={v:.3f}m/s, ω={omega:.3f}rad/s',
+            throttle_duration_sec=1.0)
         
         # Debug output
         self.get_logger().debug(
