@@ -298,12 +298,35 @@ class AgvIrttStarNode(Node):
                     break
         return np.array(pruned_path)
 
+    def densify_path(self, path, resolution):
+        """
+        Chèn thêm các điểm vào đường đi để đảm bảo có đủ điểm cho việc làm mượt.
+        Hữu ích khi đường đi chỉ có vài điểm sau khi cắt tỉa (ví dụ: đường thẳng).
+        """
+        if path is None or len(path) < 2:
+            return path
+
+        densified_path = []
+        for i in range(len(path) - 1):
+            p1 = path[i]
+            p2 = path[i+1]
+            densified_path.append(p1)
+            dist = np.linalg.norm(p2 - p1)
+            num_points = int(dist / resolution)
+            if num_points > 0:
+                for j in range(1, num_points):
+                    densified_path.append(p1 + (p2 - p1) * (j / num_points))
+        densified_path.append(path[-1])
+        return np.array(densified_path)
+
     def smooth_path_bspline(self, path):
         if len(path) < 4: return path # Cần ít nhất 4 điểm để tạo spline
         x = path[:, 0]
         y = path[:, 1]
-        # Giảm độ căng spline thêm nữa (s=0.1) để đường đi bám sát hơn vào đường gốc
-        tck, u = splprep([x, y], s=0.1, k=3)
+        # Để tăng khả năng làm mượt mà không bị va chạm trong các khu vực hẹp,
+        # cần đảm bảo spline bám sát đường gốc hơn.
+        # Giá trị 's' càng nhỏ, spline càng bám sát các điểm dữ liệu gốc.
+        tck, u = splprep([x, y], s=0.0, k=3) # Thử s=0.0 để spline nội suy qua tất cả các điểm, hoặc một giá trị rất nhỏ như 0.01
         # Giảm số điểm nội suy để giảm khả năng va chạm
         u_new = np.linspace(u.min(), u.max(), len(path) * 3)
         x_new, y_new = splev(u_new, tck)
@@ -318,6 +341,75 @@ class AgvIrttStarNode(Node):
                 return None # Trả về None để báo hiệu đường đi không hợp lệ
 
         return smoothed_path
+
+    def relaxation_smoothing(self, path, alpha=0.45, beta=0.2, iterations=40):
+        """
+        Làm mượt đường đi bằng phương pháp "relaxation" có kiểm tra va chạm chặt chẽ.
+        Để làm đường đi mượt hơn và ít bám vào đường gốc hơn:
+        - Tăng alpha (lực làm mượt)
+        - Giảm beta (lực bám đường gốc)
+        Làm mượt đường đi bằng phương pháp "relaxation" có kiểm tra va chạm chặt chẽ.
+        - alpha: hệ số kéo về trung điểm (điều chỉnh độ cong)
+        - beta: hệ số giữ vị trí ban đầu (tránh lệch xa path gốc)
+        - iterations: số lần lặp
+        """
+        if path is None or len(path) < 3:
+            return path
+
+        smoothed = path.copy()
+
+        for _ in range(iterations):
+            updated = smoothed.copy()
+            for i in range(1, len(smoothed) - 1):
+                # Dịch chuyển về trung bình 2 điểm lân cận
+                correction = alpha * (smoothed[i - 1] + smoothed[i + 1] - 2 * smoothed[i])
+                correction += beta * (path[i] - smoothed[i])
+
+                candidate = smoothed[i] + correction
+
+                # Kiểm tra va chạm điểm
+                if self.is_collision(candidate):
+                    continue  # bỏ qua nếu va chạm
+
+                # Kiểm tra va chạm với hai đoạn lân cận
+                if not self.line_of_sight(smoothed[i - 1], candidate) or \
+                   not self.line_of_sight(candidate, smoothed[i + 1]):
+                    continue
+
+                # Cập nhật điểm mới nếu an toàn
+                updated[i] = candidate
+
+            smoothed = updated
+
+        # Kiểm tra toàn tuyến, nếu vẫn va chạm thì không sử dụng đường đi đã làm mượt
+        for i in range(len(smoothed) - 1):
+            if not self.line_of_sight(smoothed[i], smoothed[i + 1]):
+                self.get_logger().warn("⚠️ Smoothed path segment still collides! Falling back to the pruned path.")
+                return None
+
+        return smoothed
+
+    def fine_smooth_bspline(self, path, s=0.1):
+        """
+        Làm mượt đường đi bằng B-spline sau khi đã có đường đi an toàn từ relaxation.
+        Kiểm tra va chạm và trả về đường gốc nếu spline bị va chạm.
+        """
+        if path is None or len(path) < 4:
+            return path # Cần ít nhất 4 điểm để tạo spline
+        x = path[:, 0]
+        y = path[:, 1]
+        tck, u = splprep([x, y], s=s, k=3)
+        u_new = np.linspace(u.min(), u.max(), int(len(path) * 1.5)) # Giảm số điểm nội suy để tăng tốc
+        x_new, y_new = splev(u_new, tck)
+        
+        smoothed_bspline_path = np.c_[x_new, y_new]
+
+        # Rất quan trọng: Kiểm tra va chạm cho đường đi đã được làm mượt
+        for p in smoothed_bspline_path:
+            if self.is_collision(p):
+                self.get_logger().warn("⚠️ Fine-smooth spline collided! Keeping coarse path.")
+                return path # Trả về đường đi gốc (từ relaxation) nếu spline bị va chạm
+        return smoothed_bspline_path
 
     def publish_path(self, path_points):
         path_msg = Path()
@@ -367,19 +459,34 @@ class AgvIrttStarNode(Node):
         pruned_path = self.prune_path(path)
         self.get_logger().info(f"Path pruned to {len(pruned_path)} points.")
 
-        path_to_publish = pruned_path
-        path_to_plot = pruned_path
+        # Tối ưu hóa: Nếu đường đi đã là đường thẳng trong không gian trống (chỉ có 2 điểm),
+        # bỏ qua quá trình làm mượt tốn kém.
+        if len(pruned_path) == 2 and self.enable_smoothing:
+            self.get_logger().info("Path is an optimal straight line. Skipping smoothing.")
+            path_to_publish = pruned_path
+            path_to_plot = pruned_path
+        elif self.enable_smoothing:
+            # (Giải pháp) Chèn thêm điểm vào đường đi đã cắt tỉa để có đủ điểm làm mượt
+            densified_pruned_path = self.densify_path(pruned_path, self.step_len)
+            self.get_logger().info(f"Path densified from {len(pruned_path)} to {len(densified_pruned_path)} points for smoothing.")
 
-        if self.enable_smoothing:
-            self.get_logger().info("Smoothing path...")
-            # Làm mượt đường đi đã được cắt tỉa
-            smoothed_path = self.smooth_path_bspline(pruned_path)
+            self.get_logger().info("Stage 1: Safe relaxation smoothing...")
+            # Chỉ sử dụng đường đi đã được làm dày (densified) để làm mượt
+            smoothed_path = self.relaxation_smoothing(densified_pruned_path)
             
             # Chỉ sử dụng đường đi đã làm mượt nếu nó hợp lệ (không va chạm)
             if smoothed_path is not None:
-                self.get_logger().info("Successfully generated a collision-free smoothed path.")
+                self.get_logger().info("Stage 2: Fine B-spline smoothing...")
+                smoothed_path = self.fine_smooth_bspline(smoothed_path, s=0.1)
+                self.get_logger().info("Successfully generated a collision-free dual-stage smoothed path.")
                 path_to_publish = smoothed_path
                 path_to_plot = smoothed_path
+            else: # Nếu làm mượt thất bại, dùng đường đã tỉa
+                path_to_publish = pruned_path
+                path_to_plot = pruned_path
+        else: # Nếu không bật smoothing
+            path_to_publish = pruned_path
+            path_to_plot = pruned_path
         
         self.publish_path(path_to_publish)
 
