@@ -29,19 +29,24 @@ def generate_launch_description():
         executable="ekf_node",
         name="ekf_filter_node",
         output="screen",
-        parameters=[os.path.join(get_package_share_directory("bumperbot_localization"), "config", "ekf.yaml")],
+        parameters=[os.path.join(get_package_share_directory("agv_localization"), "config", "ekf.yaml")],
     )
 
     imu_republisher_py = Node(
-        package="bumperbot_localization",
+        package="agv_localization",
         executable="imu_republisher.py",
         condition=IfCondition(use_python),
     )
 
     imu_republisher_cpp = Node(
-        package="bumperbot_localization",
+        package="agv_localization",
         executable="imu_republisher",
         condition=UnlessCondition(use_python),
+    )
+
+    odom_republisher = Node(
+        package="agv_localization",
+        executable="odom_republisher",
     )
 
     return LaunchDescription([
@@ -49,5 +54,6 @@ def generate_launch_description():
         static_transform_publisher,
         robot_localization,
         imu_republisher_py,
-        imu_republisher_cpp,   
+        imu_republisher_cpp,
+        odom_republisher,   
     ])

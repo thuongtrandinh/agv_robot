@@ -62,11 +62,11 @@ void KeyboardInput::keyboardLoop()
         {
         case 'w':
         case 'W':
-            publishCmd(-0.5, 0.0); // Tiến
+            publishCmd(0.5, 0.0); // Tiến
             break;
         case 's':
         case 'S':
-            publishCmd(0.5, 0.0); // Lùi
+            publishCmd(-0.5, 0.0); // Lùi
             break;
         case 'a':
         case 'A':
