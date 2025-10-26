@@ -12,10 +12,23 @@ find_package(rclpy REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
 find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 include_directories(include)
 
+add_executable(aruco_detector_sim src/aruco_detector_sim.cpp)
+ament_target_dependencies(aruco_detector_sim
+  rclcpp sensor_msgs geometry_msgs std_msgs visualization_msgs
+  cv_bridge tf2 tf2_ros tf2_geometry_msgs
+)
+target_link_libraries(aruco_detector_sim ${OpenCV_LIBRARIES} yaml-cpp)
 add_executable(kalman_filter src/kalman_filter.cpp)
 ament_target_dependencies(kalman_filter rclcpp nav_msgs sensor_msgs)
 
@@ -43,6 +56,7 @@ install(TARGETS
 )
 
 install(TARGETS
+  aruco_detector_sim
   kalman_filter
   imu_republisher
   odom_republisher
