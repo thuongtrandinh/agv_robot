@@ -116,7 +116,7 @@ class FuzzyTrajectoryController(Node):
         """Setup fuzzy membership functions and rules"""
         # Define membership function parameters for e_D (distance error in meters)
         self.e_d_mf = {
-            'VS': ('trap', [0, 0, 5, 1.25]),
+            'VS': ('trap', [0, 0, 0.5, 1.25]),
             'S': ('tri', [0, 1.25, 2.5]),
             'M': ('tri', [1.25, 2.5, 3.75]),
             'B': ('tri', [2.5, 3.75, 5.0]),
@@ -136,36 +136,65 @@ class FuzzyTrajectoryController(Node):
         
         # Sugeno: Output constants (singleton values) for wheel velocities in m/s
         self.output_constants = {
-            'Z': 0, 'S': 0.15, 'F': 0.25, 'M': 0.35,
-            'B': 0.45, 'B': 0.45, 'VB': 0.55
+            'NB': -0.45,  # Negative Big
+            'NM': -0.30,  # Negative Medium
+            'NS': -0.15,  # Negative Small
+            'ZE': 0.0,    # Zero
+            'PS': 0.15,   # Positive Small
+            'PM': 0.30,   # Positive Medium
+            'PB': 0.45    # Positive Big
         }
         
         # Fuzzy rule table (Sugeno): (e_D, e_Theta) -> (VL_constant, VR_constant)
+        # Strategy: 
+        # - When far and heading correct: move forward fast (both wheels positive)
+        # - When heading wrong: turn in place or slow down (differential steering)
+        # - When close: slow down
         self.rule_table = {
-            ('VS', 'NB'): ('PM', 'NB'), ('VS', 'NM'): ('PM', 'NS'),
-            ('VS', 'NS'): ('PM', 'ZE'), ('VS', 'ZE'): ('PB', 'PB'),
-            ('VS', 'PS'): ('PM', 'ZE'), ('VS', 'PM'): ('PM', 'NS'),
-            ('VS', 'PB'): ('PM', 'NB'),
+            # Very Small distance (0-1.25m)
+            ('VS', 'NB'): ('NM', 'PS'),  # Far left needed: left backward, right forward
+            ('VS', 'NM'): ('NS', 'PS'),  # Medium left: left slow back, right forward
+            ('VS', 'NS'): ('ZE', 'PS'),  # Small left: stop left, forward right
+            ('VS', 'ZE'): ('PS', 'PS'),  # Heading good: both forward slow
+            ('VS', 'PS'): ('PS', 'ZE'),  # Small right: forward left, stop right
+            ('VS', 'PM'): ('PS', 'NS'),  # Medium right: forward left, back right
+            ('VS', 'PB'): ('PS', 'NM'),  # Far right: forward left, back right more
             
-            ('S', 'NB'): ('PS', 'NM'), ('S', 'NM'): ('PM', 'NS'),
-            ('S', 'NS'): ('PM', 'ZE'), ('S', 'ZE'): ('PM', 'PM'),
-            ('S', 'PS'): ('PM', 'ZE'), ('S', 'PM'): ('PM', 'NS'),
-            ('S', 'PB'): ('PS', 'NM'),
+            # Small distance (1.25-2.5m)
+            ('S', 'NB'): ('NM', 'PM'),
+            ('S', 'NM'): ('NS', 'PM'),
+            ('S', 'NS'): ('PS', 'PM'),
+            ('S', 'ZE'): ('PM', 'PM'),  # Good heading, medium speed
+            ('S', 'PS'): ('PM', 'PS'),
+            ('S', 'PM'): ('PM', 'NS'),
+            ('S', 'PB'): ('PM', 'NM'),
             
-            ('M', 'NB'): ('ZE', 'NM'), ('M', 'NM'): ('PS', 'NS'),
-            ('M', 'NS'): ('PM', 'PS'), ('M', 'ZE'): ('PS', 'PS'),
-            ('M', 'PS'): ('PM', 'PS'), ('M', 'PM'): ('PS', 'NS'),
-            ('M', 'PB'): ('ZE', 'NM'),
+            # Medium distance (2.5-3.75m)
+            ('M', 'NB'): ('NS', 'PB'),
+            ('M', 'NM'): ('PS', 'PB'),
+            ('M', 'NS'): ('PM', 'PB'),
+            ('M', 'ZE'): ('PB', 'PB'),  # Good heading, go fast
+            ('M', 'PS'): ('PB', 'PM'),
+            ('M', 'PM'): ('PB', 'PS'),
+            ('M', 'PB'): ('PB', 'NS'),
             
-            ('B', 'NB'): ('PS', 'NS'), ('B', 'NM'): ('PS', 'ZE'),
-            ('B', 'NS'): ('PS', 'ZE'), ('B', 'ZE'): ('PS', 'PS'),
-            ('B', 'PS'): ('ZE', 'PS'), ('B', 'PM'): ('ZE', 'PS'),
-            ('B', 'PB'): ('NS', 'PS'),
+            # Big distance (3.75-5m)
+            ('B', 'NB'): ('ZE', 'PB'),
+            ('B', 'NM'): ('PS', 'PB'),
+            ('B', 'NS'): ('PM', 'PB'),
+            ('B', 'ZE'): ('PB', 'PB'),  # Far and aligned: go fast
+            ('B', 'PS'): ('PB', 'PM'),
+            ('B', 'PM'): ('PB', 'PS'),
+            ('B', 'PB'): ('PB', 'ZE'),
             
-            ('VB', 'NB'): ('NM', 'ZE'), ('VB', 'NM'): ('NS', 'PS'),
-            ('VB', 'NS'): ('PS', 'PM'), ('VB', 'ZE'): ('PS', 'PS'),
-            ('VB', 'PS'): ('PS', 'PM'), ('VB', 'PM'): ('NS', 'PS'),
-            ('VB', 'PB'): ('NM', 'ZE'),
+            # Very Big distance (>5m)
+            ('VB', 'NB'): ('NS', 'PB'),
+            ('VB', 'NM'): ('PS', 'PB'),
+            ('VB', 'NS'): ('PM', 'PB'),
+            ('VB', 'ZE'): ('PB', 'PB'),  # Very far and aligned: max speed
+            ('VB', 'PS'): ('PB', 'PM'),
+            ('VB', 'PM'): ('PB', 'PS'),
+            ('VB', 'PB'): ('PB', 'NS'),
         }
         
         self.get_logger().info(f'Created {len(self.rule_table)} fuzzy rules')
@@ -250,27 +279,34 @@ class FuzzyTrajectoryController(Node):
         self.get_logger().info(f'Trajectory: {len(msg.poses)} points')
     
     def find_closest_point(self, path, x, y):
-        """Find closest point on path"""
+        """Find closest point on path ahead of robot"""
         min_dist = float('inf')
         closest_idx = 0
+        
+        # First, find the actual closest point
         for i, pose_stamped in enumerate(path.poses):
             pose = pose_stamped.pose.position
             dist = math.sqrt((pose.x - x)**2 + (pose.y - y)**2)
             if dist < min_dist:
                 min_dist = dist
                 closest_idx = i
-        return closest_idx
+        
+        # Add lookahead: select point ahead of closest point
+        lookahead_points = 10  # Look 10 points ahead
+        target_idx = min(closest_idx + lookahead_points, len(path.poses) - 1)
+        
+        return target_idx
     
     def compute_tracking_errors(self):
-        """Compute e_D and e_Theta"""
+        """Compute e_D (distance to target) and e_Theta (heading error)"""
         if not self.path_received or self.current_path is None:
             return 0.0, 0.0
         if len(self.current_path.poses) == 0:
             return 0.0, 0.0
         
-        # Find closest point
-        closest_idx = self.find_closest_point(self.current_path, self.robot_x, self.robot_y)
-        ref_pose = self.current_path.poses[closest_idx].pose
+        # Find target point (closest + lookahead)
+        target_idx = self.find_closest_point(self.current_path, self.robot_x, self.robot_y)
+        ref_pose = self.current_path.poses[target_idx].pose
         ref_x = ref_pose.position.x
         ref_y = ref_pose.position.y
         
@@ -281,13 +317,16 @@ class FuzzyTrajectoryController(Node):
             ref_orientation.z, ref_orientation.w
         )
         
-        # Distance error (projected)
-        dx = self.robot_x - ref_x
-        dy = self.robot_y - ref_y
-        e_d = dx * math.cos(ref_theta) + dy * math.sin(ref_theta)
+        # Distance to target point (Euclidean distance)
+        dx = ref_x - self.robot_x
+        dy = ref_y - self.robot_y
+        e_d = math.sqrt(dx*dx + dy*dy)
         
-        # Angle error (in degrees)
-        e_theta_rad = self.robot_theta - ref_theta
+        # Heading error: angle between robot heading and direction to target
+        target_angle = math.atan2(dy, dx)
+        e_theta_rad = target_angle - self.robot_theta
+        
+        # Normalize angle to [-pi, pi]
         while e_theta_rad > math.pi:
             e_theta_rad -= 2.0 * math.pi
         while e_theta_rad < -math.pi:
