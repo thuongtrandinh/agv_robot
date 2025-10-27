@@ -29,6 +29,15 @@ ament_target_dependencies(aruco_detector_sim
   cv_bridge tf2 tf2_ros tf2_geometry_msgs
 )
 target_link_libraries(aruco_detector_sim ${OpenCV_LIBRARIES} yaml-cpp)
+
+# New: ArUco Map Localizer - uses pre-defined marker positions for absolute localization
+add_executable(aruco_map_localizer src/aruco_map_localizer.cpp)
+ament_target_dependencies(aruco_map_localizer
+  rclcpp sensor_msgs geometry_msgs visualization_msgs
+  cv_bridge tf2 tf2_geometry_msgs
+)
+target_link_libraries(aruco_map_localizer ${OpenCV_LIBRARIES} yaml-cpp)
+
 add_executable(kalman_filter src/kalman_filter.cpp)
 ament_target_dependencies(kalman_filter rclcpp nav_msgs sensor_msgs)
 
@@ -57,6 +66,7 @@ install(TARGETS
 
 install(TARGETS
   aruco_detector_sim
+  aruco_map_localizer
   kalman_filter
   imu_republisher
   odom_republisher
@@ -73,6 +83,7 @@ install(PROGRAMS
   ${PROJECT_NAME}/kalman_filter.py
   ${PROJECT_NAME}/imu_republisher.py
   ${PROJECT_NAME}/odometry_motion_model.py
+  ${PROJECT_NAME}/fusion_monitor.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

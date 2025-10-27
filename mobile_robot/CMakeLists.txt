@@ -44,7 +44,7 @@ install(DIRECTORY urdf launch xacro config include rviz worlds photos models
 )
 
 # Install executables
-install(TARGETS simple_controller twist_relay aruco_detector_sim
+install(TARGETS simple_controller twist_relay
   DESTINATION lib/${PROJECT_NAME})
 
 # Install Python scripts

@@ -418,8 +418,8 @@
 	<joint name="zed2_joint" type="fixed">
 		<parent link="base_link"/>
 		<child link="zed2_link"/>
-		<!-- đặt phía trước robot, gần 2 bánh vi sai -->
-		<origin xyz="0.08 0.0 0.2"/>
+		<!-- Camera dời ra phía trước và cao hơn để nhìn thấy ArUco markers -->
+		<origin xyz="0.10 0.0 0.35"/>
 	</joint>
 
 	<!-- Left Camera (U26) -->
