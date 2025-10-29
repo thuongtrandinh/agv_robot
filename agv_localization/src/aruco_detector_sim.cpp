@@ -16,25 +16,29 @@
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 
-// Yaml + filesystem
-#include <yaml-cpp/yaml.h>
-#include <ament_index_cpp/get_package_share_directory.hpp>
-#include <filesystem>
-#include <fstream>
-#include <set>
 
 class SimArucoNode : public rclcpp::Node {
 public:
   SimArucoNode()
-  : Node("aruco_detector"),
+  : Node("aruco_detector"), // Initializer list
+    // Tối ưu hóa: Khởi tạo ma trận xoay cố định một lần duy nhất
+    R_fix_((cv::Mat_<double>(3, 3) <<
+        0,  0, 1,
+       -1,  0, 0,
+        0, -1, 0
+    )),
     dictionary_(cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250))
   {
     // Parameters
     image_topic_        = this->declare_parameter<std::string>("image_topic", "/zed2/left/image_raw");
     camera_info_topic_  = this->declare_parameter<std::string>("camera_info_topic", "/zed2/left/camera_info");
     marker_size_        = this->declare_parameter<double>("marker_size", 0.173);
+    map_frame_id_       = this->declare_parameter<std::string>("map_frame", "map");
     cam_frame_id_       = this->declare_parameter<std::string>("camera_frame_id", "zed2_left_camera_frame");
 
     // Publishers
@@ -47,6 +51,9 @@ public:
 
     // TF Broadcaster
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
+    // TF Listener
+    tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     // Subscribers
     auto sensor_qos = rclcpp::SensorDataQoS();
@@ -58,15 +65,9 @@ public:
       image_topic_, sensor_qos,
       std::bind(&SimArucoNode::imageCallback, this, std::placeholders::_1));
 
-    // Setup save path
-    pkg_share_dir_ = ament_index_cpp::get_package_share_directory("mobile_robot");
-    save_dir_ = pkg_share_dir_ + "/maps/aruco_markers";
-    save_path_ = save_dir_ + "/aruco_markers.yaml";
-    std::filesystem::create_directories(save_dir_);
-
     RCLCPP_INFO(this->get_logger(),
-      "✅ ArUco detector started.\n   Image: %s\n   CameraInfo: %s\n   Marker size: %.3f m\n   Save path: %s",
-      image_topic_.c_str(), camera_info_topic_.c_str(), marker_size_, save_path_.c_str());
+      "✅ ArUco detector started.\n   Image: %s\n   CameraInfo: %s\n   Marker size: %.3f m",
+      image_topic_.c_str(), camera_info_topic_.c_str(), marker_size_);
   }
 
 private:
@@ -128,16 +129,9 @@ private:
         cv::Mat R_cv;
         cv::Rodrigues(rvecs[i], R_cv);
 
-        cv::Mat R_fix = (cv::Mat_<double>(3,3) <<
-            0,  0, 1,
-           -1,  0, 0,
-            0, -1, 0
-        );
-
-        cv::Mat R_ros = R_fix * R_cv;
-        cv::Mat t_ros = R_fix * cv::Mat(tvecs[i]);
-
-        cv::Matx33d Rm(
+        cv::Mat R_ros = R_fix_ * R_cv;
+        cv::Mat t_ros = R_fix_ * cv::Mat(tvecs[i]);
+        cv::Matx33d Rm( // Chuyển đổi sang Matx để truy cập dễ dàng hơn
           R_ros.at<double>(0,0), R_ros.at<double>(0,1), R_ros.at<double>(0,2),
           R_ros.at<double>(1,0), R_ros.at<double>(1,1), R_ros.at<double>(1,2),
           R_ros.at<double>(2,0), R_ros.at<double>(2,1), R_ros.at<double>(2,2)
@@ -169,15 +163,12 @@ private:
         info_msg.data.push_back(static_cast<float>(ids[i]));
         info_msg.data.push_back(static_cast<float>(dist));
 
-        // Publish pose of first marker
+        // Use the first detected marker for saving and robot pose estimation
         if (i == 0) {
           geometry_msgs::msg::PoseStamped ps;
           ps.header = pose_array.header;
           ps.pose = pose;
           pub_pose_->publish(ps);
-
-          // Save YAML (ghi đè)
-          saveMarkerToYAML(ids[i], ps.pose);
         }
 
         // Marker RViz
@@ -223,52 +214,17 @@ private:
     }
   }
 
-    // Save markers (append multiple IDs in one session)
-  void saveMarkerToYAML(int id, const geometry_msgs::msg::Pose &pose) {
-    std::string path = "maps/aruco_markers/aruco_markers.yaml";
-    YAML::Node root;
-
-    // Load file cũ nếu tồn tại
-    std::ifstream fin(path);
-    if (fin.good()) {
-      root = YAML::Load(fin);
-      fin.close();
-    }
-
-    // Ghi đè hoặc thêm mới marker
-    YAML::Node marker;
-    marker["position"]["x"] = pose.position.x;
-    marker["position"]["y"] = pose.position.y;
-    marker["position"]["z"] = pose.position.z;
-    marker["orientation"]["x"] = pose.orientation.x;
-    marker["orientation"]["y"] = pose.orientation.y;
-    marker["orientation"]["z"] = pose.orientation.z;
-    marker["orientation"]["w"] = pose.orientation.w;
-
-    root["markers"][id] = marker;
-
-    // Lưu lại
-    std::ofstream fout(path);
-    fout << root;
-    fout.close();
-
-    RCLCPP_INFO(this->get_logger(), "💾 Saved/updated marker %d to %s", id, path.c_str());
-  }
-
-
   // Members
   std::string image_topic_;
+  std::string map_frame_id_;
   std::string camera_info_topic_;
   std::string cam_frame_id_;
   double marker_size_{0.173};
   bool has_cam_info_{false};
   cv::Mat K_ = cv::Mat::eye(3,3,CV_64F);
   cv::Mat dist_coeffs_ = cv::Mat::zeros(1,5,CV_64F);
+  const cv::Mat R_fix_; // Ma trận xoay từ camera quang học sang camera ROS
   cv::Ptr<cv::aruco::Dictionary> dictionary_;
-
-  std::string pkg_share_dir_;
-  std::string save_dir_;
-  std::string save_path_;
 
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr cam_info_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr img_sub_;
@@ -279,6 +235,8 @@ private:
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr pub_info_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_markers_;
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
 };
 
 int main(int argc, char **argv) {

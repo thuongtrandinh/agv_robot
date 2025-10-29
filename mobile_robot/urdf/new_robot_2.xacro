@@ -419,7 +419,7 @@
 		<parent link="base_link"/>
 		<child link="zed2_link"/>
 		<!-- đặt phía trước robot, gần 2 bánh vi sai -->
-		<origin xyz="0.08 0.0 0.2"/>
+		<origin xyz="0.1 0.0 0.2"/>
 	</joint>
 
 	<!-- Left Camera (U26) -->

@@ -38,7 +38,7 @@ ekf_filter_node:
       #         estimation node from robot_localization! However, that instance should *not* fuse the global data.
       map_frame: map              # Defaults to "map" if unspecified
       odom_frame: odom            # Defaults to "odom" if unspecified
-      base_link_frame: base_footprint_ekf  # Defaults to "base_link" if unspecified
+      base_link_frame: base_footprint  # Defaults to "base_link" if unspecified
       world_frame: odom           # Defaults to the value of odom_frame if unspecified
 
       
@@ -98,6 +98,21 @@ ekf_filter_node:
       odom0_pose_use_child_frame: false
       odom0_relative: false
       odom0_queue_size: 10
+
+      # ArUco Pose Input - VÔ HIỆU HÓA ĐỂ TRÁNH XUNG ĐỘT VỚI AMCL/SLAM
+      # Dữ liệu này sẽ được sử dụng bởi một node khác (ví dụ AMCL) trong tương lai.
+      # This input provides an absolute pose measurement of the robot in the map frame
+      # derived from ArUco marker observations.
+      # pose0: /aruco/robot_pose
+      # pose0_config: [true,  true,  false,   # x, y, z
+      #                false, false, true,    # roll, pitch, yaw
+      #                false, false, false,
+      #                false, false, false,
+      #                false, false, false]
+      # # This is an absolute pose measurement, so differential mode is false.
+      # pose0_differential: false
+      # pose0_queue_size: 10
+      # pose0_nodelay: false # Set to true if you want to process immediately
 
       # [ADVANCED] The process noise covariance matrix can be difficult to tune, and can vary for each application, so it is
       # exposed as a configuration parameter. This matrix represents the noise we add to the total error after each

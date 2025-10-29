@@ -55,6 +55,16 @@ def generate_launch_description():
         ],
     )
 
+    mapping_aruco_saver = Node(
+        package="agv_mapping_with_knowns_poses",
+        executable="mapping_aruco",
+        name="mapping_aruco_saver",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+        ],
+    )
+
     nav2_lifecycle_manager = Node(
         package="nav2_lifecycle_manager",
         executable="lifecycle_manager",
@@ -72,5 +82,6 @@ def generate_launch_description():
         slam_config_arg,
         nav2_map_saver,
         slam_toolbox,
+        mapping_aruco_saver,
         nav2_lifecycle_manager,
     ])

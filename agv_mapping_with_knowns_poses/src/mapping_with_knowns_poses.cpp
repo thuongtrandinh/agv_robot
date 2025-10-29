@@ -121,7 +121,7 @@ MappingWithKnownPoses::MappingWithKnownPoses(const std::string &name)
     map_.info.height = std::round(height / map_.info.resolution);
     map_.info.origin.position.x = - std::round(width / 2.0);
     map_.info.origin.position.y = - std::round(height / 2.0);
-    map_.header.frame_id = "odom";
+    map_.header.frame_id = "map";
 
     // Init map with prior probability
     map_.data = std::vector<int8_t>(map_.info.height * map_.info.width, -1);
@@ -133,6 +133,7 @@ MappingWithKnownPoses::MappingWithKnownPoses(const std::string &name)
         "scan", 10, std::bind(&MappingWithKnownPoses::scanCallback, this, _1));
     map_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>("map", 1);
     timer_ = create_wall_timer(1s, std::bind(&MappingWithKnownPoses::timerCallback, this));
+    RCLCPP_INFO(this->get_logger(), "Mapping node started.");
 }
 
 void MappingWithKnownPoses::scanCallback(const sensor_msgs::msg::LaserScan &scan)
@@ -140,11 +141,12 @@ void MappingWithKnownPoses::scanCallback(const sensor_msgs::msg::LaserScan &scan
     geometry_msgs::msg::TransformStamped t;
     try
     {
+        // Sử dụng map_.header.frame_id ("map") làm frame đích
         t = tf_buffer_->lookupTransform(map_.header.frame_id, scan.header.frame_id, tf2::TimePointZero);
     }
     catch (const tf2::TransformException &ex)
     {
-        RCLCPP_ERROR(get_logger(), "Unable to transform between /odom and /base_footprint");
+        RCLCPP_ERROR(get_logger(), "Unable to transform between '%s' and '%s': %s", map_.header.frame_id.c_str(), scan.header.frame_id.c_str(), ex.what());
         return;
     }
 

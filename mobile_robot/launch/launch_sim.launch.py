@@ -127,7 +127,7 @@ def launch_setup(context, *args, **kwargs):
 
     # Aruco detector
     aruco_detector = Node(
-        package='mobile_robot',
+        package='agv_localization',
         executable='aruco_detector_sim',
         name='aruco_detector',
         parameters=[{'use_sim_time': use_sim_time}],
