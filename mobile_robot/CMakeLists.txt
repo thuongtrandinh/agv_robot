@@ -45,7 +45,7 @@ include_directories(
 )
 
 # Install resources
-install(DIRECTORY urdf launch xacro config include rviz worlds photos models maps
+install(DIRECTORY urdf launch xacro config include rviz worlds photos models
   DESTINATION share/${PROJECT_NAME}
 )
 
