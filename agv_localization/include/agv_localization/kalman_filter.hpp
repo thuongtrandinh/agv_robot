@@ -9,7 +9,7 @@
 class KalmanFilter : public rclcpp::Node
 {
 public:
-    KalmanFilter(const std::string& name);
+    KalmanFilter(const std::string& name, const rclcpp::NodeOptions & options);
 
     void statePrediction();
 

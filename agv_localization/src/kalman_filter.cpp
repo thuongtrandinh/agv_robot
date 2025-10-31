@@ -3,8 +3,8 @@
 using std::placeholders::_1;
 
 
-KalmanFilter::KalmanFilter(const std::string& name) 
-                    : Node(name),
+KalmanFilter::KalmanFilter(const std::string& name, const rclcpp::NodeOptions & options) 
+                    : Node(name, options),
                       mean_(0.0),
                       variance_(1000.0),
                       motion_variance_(4.0),
@@ -72,7 +72,9 @@ void KalmanFilter::statePrediction()
 int main(int argc, char* argv[])
 {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<KalmanFilter>("kalman_filter");
+  rclcpp::NodeOptions node_options;
+  node_options.append_parameter_override("use_sim_time", true);
+  auto node = std::make_shared<KalmanFilter>("kalman_filter", node_options);
   rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;
