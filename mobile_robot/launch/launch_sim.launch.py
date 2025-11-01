@@ -142,9 +142,9 @@ def launch_setup(context, *args, **kwargs):
     )
 
     return [
-        # 🔥 CRITICAL ORDER: Bridge first for time sync, then Gazebo
-        bridge,
+        # 🔥 CRITICAL ORDER: Gazebo first to be the clock source, then the bridge
         gazebo_launch,
+        bridge,
         robot_state_publisher,
         rviz,
         gz_spawn_entity,

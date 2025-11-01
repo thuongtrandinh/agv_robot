@@ -4,3 +4,7 @@ speed_left
 Error1
 duty_left
 duty_cycle_left
+setpoint_right
+enc_right
+speed_right
+duty_cycle_right
