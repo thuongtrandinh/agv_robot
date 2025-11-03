@@ -1,4 +1,6 @@
 from setuptools import find_packages, setup
+import os
+from glob import glob
 
 package_name = 'agv_trajectory_tracking'
 
@@ -10,6 +12,8 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        # Install launch files
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -25,7 +29,9 @@ setup(
     entry_points={
         'console_scripts': [
             'fuzzy_trajectory_controller = agv_trajectory_tracking.fuzzy_trajectory_controller:main',
-            'trajectory_publisher = agv_trajectory_tracking.trajectory_publisher:main'
+            'trajectory_publisher = agv_trajectory_tracking.trajectory_publisher:main',
+            'trajectory_visualizer = agv_trajectory_tracking.trajectory_visualizer:main',
+            'trajectory_plotter = agv_trajectory_tracking.trajectory_plotter:main'
         ],
     },
 )

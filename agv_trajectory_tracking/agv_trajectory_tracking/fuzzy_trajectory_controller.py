@@ -13,6 +13,8 @@ from rclpy.node import Node
 from nav_msgs.msg import Path
 from geometry_msgs.msg import TwistStamped, PoseWithCovarianceStamped
 import math
+import signal
+import sys
 
 
 def quaternion_to_euler(x, y, z, w):
@@ -90,6 +92,9 @@ class FuzzyTrajectoryController(Node):
         self.current_path = None
         self.path_received = False
         
+        # Shutdown flag
+        self.is_shutdown = False
+        
         # ROS2 interfaces
         self.cmd_vel_pub = self.create_publisher(TwistStamped, '/diff_cont/cmd_vel', 10)
         
@@ -111,6 +116,22 @@ class FuzzyTrajectoryController(Node):
         self.control_timer = self.create_timer(timer_period, self.control_loop)
         
         self.get_logger().info('Controller started (Pure Python Fuzzy - Sugeno Method)!')
+    
+    def stop_robot(self):
+        """Stop the robot by sending zero velocity"""
+        cmd_vel = TwistStamped()
+        cmd_vel.header.stamp = self.get_clock().now().to_msg()
+        cmd_vel.header.frame_id = 'base_link'
+        cmd_vel.twist.linear.x = 0.0
+        cmd_vel.twist.angular.z = 0.0
+        self.cmd_vel_pub.publish(cmd_vel)
+        self.get_logger().info('🛑 Robot stopped!')
+    
+    def shutdown_callback(self):
+        """Cleanup when shutting down"""
+        self.get_logger().info('Shutting down controller...')
+        self.is_shutdown = True
+        self.stop_robot()
     
     def setup_fuzzy_system(self):
         """Setup fuzzy membership functions and rules"""
@@ -136,65 +157,62 @@ class FuzzyTrajectoryController(Node):
         
         # Sugeno: Output constants (singleton values) for wheel velocities in m/s
         self.output_constants = {
-            'NB': -0.45,  # Negative Big
-            'NM': -0.30,  # Negative Medium
-            'NS': -0.15,  # Negative Small
-            'ZE': 0.0,    # Zero
-            'PS': 0.15,   # Positive Small
-            'PM': 0.30,   # Positive Medium
-            'PB': 0.45    # Positive Big
+            'Z': 0.0,     # Zero
+            'S': 0.15,    # Small
+            'F': 0.25,    # Fair/Medium-Small
+            'M': 0.35,    # Medium
+            'B': 0.45,    # Big
+            'VB': 0.55    # Very Big
         }
         
-        # Fuzzy rule table (Sugeno): (e_D, e_Theta) -> (VL_constant, VR_constant)
-        # Strategy: 
-        # - When far and heading correct: move forward fast (both wheels positive)
-        # - When heading wrong: turn in place or slow down (differential steering)
-        # - When close: slow down
+        # Fuzzy rule table (Sugeno): (e_D, e_Theta) -> (VR_constant, VL_constant)
+        # Based on the rule table from Fuzzy Logic Designer
+        # Format: (Distance, Angle) -> (VR, VL) where VR=right wheel, VL=left wheel
         self.rule_table = {
-            # Very Small distance (0-1.25m)
-            ('VS', 'NB'): ('NM', 'PS'),  # Far left needed: left backward, right forward
-            ('VS', 'NM'): ('NS', 'PS'),  # Medium left: left slow back, right forward
-            ('VS', 'NS'): ('ZE', 'PS'),  # Small left: stop left, forward right
-            ('VS', 'ZE'): ('PS', 'PS'),  # Heading good: both forward slow
-            ('VS', 'PS'): ('PS', 'ZE'),  # Small right: forward left, stop right
-            ('VS', 'PM'): ('PS', 'NS'),  # Medium right: forward left, back right
-            ('VS', 'PB'): ('PS', 'NM'),  # Far right: forward left, back right more
+            # Rule 1-7: D is VS (Very Small)
+            ('VS', 'NB'): ('B', 'Z'),      # rule1: VR=Z, VL=S
+            ('VS', 'NM'): ('M', 'S'),      # rule2: VR=S, VL=M
+            ('VS', 'NS'): ('F', 'S'),      # rule3: VR=F, VL=S
+            ('VS', 'ZE'): ('S', 'S'),      # rule4: VR=S, VL=S (ZE = Z in image)
+            ('VS', 'PS'): ('S', 'F'),      # rule5: VR=S, VL=F
+            ('VS', 'PM'): ('S', 'M'),      # rule6: VR=M, VL=S
+            ('VS', 'PB'): ('Z', 'B'),      # rule7: VR=Z, VL=B
             
-            # Small distance (1.25-2.5m)
-            ('S', 'NB'): ('NM', 'PM'),
-            ('S', 'NM'): ('NS', 'PM'),
-            ('S', 'NS'): ('PS', 'PM'),
-            ('S', 'ZE'): ('PM', 'PM'),  # Good heading, medium speed
-            ('S', 'PS'): ('PM', 'PS'),
-            ('S', 'PM'): ('PM', 'NS'),
-            ('S', 'PB'): ('PM', 'NM'),
+            # Rule 8-14: D is S (Small)
+            ('S', 'NB'): ('VB', 'Z'),      # rule8: VR=VB, VL=S
+            ('S', 'NM'): ('B', 'S'),      # rule9: VR=S, VL=VB
+            ('S', 'NS'): ('M', 'F'),       # rule10: VR=M, VL=S
+            ('S', 'ZE'): ('F', 'F'),       # rule11: VR=F, VL=M
+            ('S', 'PS'): ('F', 'M'),       # rule12: VR=S, VL=M
+            ('S', 'PM'): ('S', 'B'),       # rule13: VR=F, VL=F
+            ('S', 'PB'): ('Z', 'VB'),       # rule14: VR=S, VL=S
             
-            # Medium distance (2.5-3.75m)
-            ('M', 'NB'): ('NS', 'PB'),
-            ('M', 'NM'): ('PS', 'PB'),
-            ('M', 'NS'): ('PM', 'PB'),
-            ('M', 'ZE'): ('PB', 'PB'),  # Good heading, go fast
-            ('M', 'PS'): ('PB', 'PM'),
-            ('M', 'PM'): ('PB', 'PS'),
-            ('M', 'PB'): ('PB', 'NS'),
+            # Rule 15-21: D is M (Medium)
+            ('M', 'NB'): ('VB', 'Z'),      # rule15: VR=VB, VL=Z
+            ('M', 'NM'): ('VB', 'F'),      # rule16: VR=VB, VL=F
+            ('M', 'NS'): ('B', 'M'),       # rule17: VR=B, VL=M
+            ('M', 'ZE'): ('M', 'M'),       # rule18: VR=M, VL=M
+            ('M', 'PS'): ('M', 'B'),       # rule19: VR=M, VL=B
+            ('M', 'PM'): ('F', 'VB'),      # rule20: VR=F, VL=VB
+            ('M', 'PB'): ('Z', 'VB'),      # rule21: VR=Z, VL=VB
             
-            # Big distance (3.75-5m)
-            ('B', 'NB'): ('ZE', 'PB'),
-            ('B', 'NM'): ('PS', 'PB'),
-            ('B', 'NS'): ('PM', 'PB'),
-            ('B', 'ZE'): ('PB', 'PB'),  # Far and aligned: go fast
-            ('B', 'PS'): ('PB', 'PM'),
-            ('B', 'PM'): ('PB', 'PS'),
-            ('B', 'PB'): ('PB', 'ZE'),
+            # Rule 22-28: D is B (Big)
+            ('B', 'NB'): ('VB', 'Z'),      # rule22: VR=VB, VL=Z
+            ('B', 'NM'): ('VB', 'S'),      # rule23: VR=VB, VL=S
+            ('B', 'NS'): ('B', 'M'),       # rule24: VR=B, VL=M
+            ('B', 'ZE'): ('B', 'B'),       # rule25: VR=B, VL=B
+            ('B', 'PS'): ('M', 'B'),       # rule26: VR=M, VL=B
+            ('B', 'PM'): ('S', 'VB'),      # rule27: VR=S, VL=VB
+            ('B', 'PB'): ('Z', 'VB'),      # rule28: VR=Z, VL=VB
             
-            # Very Big distance (>5m)
-            ('VB', 'NB'): ('NS', 'PB'),
-            ('VB', 'NM'): ('PS', 'PB'),
-            ('VB', 'NS'): ('PM', 'PB'),
-            ('VB', 'ZE'): ('PB', 'PB'),  # Very far and aligned: max speed
-            ('VB', 'PS'): ('PB', 'PM'),
-            ('VB', 'PM'): ('PB', 'PS'),
-            ('VB', 'PB'): ('PB', 'NS'),
+            # Rule 29-35: D is VB (Very Big)
+            ('VB', 'NB'): ('VB', 'Z'),     # rule29: VR=VB, VL=Z
+            ('VB', 'NM'): ('VB', 'F'),     # rule30: VR=VB, VL=F
+            ('VB', 'NS'): ('B', 'M'),      # rule31: VR=B, VL=M
+            ('VB', 'ZE'): ('VB', 'VB'),    # rule32: VR=VB, VL=VB
+            ('VB', 'PS'): ('M', 'B'),      # rule33: VR=M, VL=B
+            ('VB', 'PM'): ('F', 'VB'),     # rule34: VR=F, VL=VB
+            ('VB', 'PB'): ('Z', 'VB'),     # rule35: VR=Z, VL=VB
         }
         
         self.get_logger().info(f'Created {len(self.rule_table)} fuzzy rules')
@@ -214,47 +232,48 @@ class FuzzyTrajectoryController(Node):
         
         Sugeno method uses weighted average of constant outputs
         instead of defuzzifying membership functions like Mamdani.
+        Rule table format: (Distance, Angle) -> (VR, VL) where VR=right, VL=left
         """
         # Fuzzify inputs
         e_d_fuzz = self.fuzzify(e_d, self.e_d_mf)
         e_theta_fuzz = self.fuzzify(e_theta_deg, self.e_theta_mf)
         
         # Apply rules and compute weighted outputs (Sugeno)
-        vl_numerator = 0.0
-        vl_denominator = 0.0
         vr_numerator = 0.0
         vr_denominator = 0.0
+        vl_numerator = 0.0
+        vl_denominator = 0.0
         
-        for (e_d_label, e_theta_label), (vl_label, vr_label) in self.rule_table.items():
+        for (e_d_label, e_theta_label), (vr_label, vl_label) in self.rule_table.items():
             # Rule firing strength (min for AND operation)
             strength = min(e_d_fuzz[e_d_label], e_theta_fuzz[e_theta_label])
             
             if strength > 0:
                 # Get constant output values for this rule
-                vl_output = self.output_constants[vl_label]
                 vr_output = self.output_constants[vr_label]
+                vl_output = self.output_constants[vl_label]
                 
                 # Accumulate weighted sum (Sugeno weighted average)
-                vl_numerator += strength * vl_output
-                vl_denominator += strength
-                
                 vr_numerator += strength * vr_output
                 vr_denominator += strength
+                
+                vl_numerator += strength * vl_output
+                vl_denominator += strength
         
         # Compute final outputs (weighted average)
-        if vl_denominator > 0:
-            v_left = vl_numerator / vl_denominator
-        else:
-            v_left = 0.0
-            
         if vr_denominator > 0:
             v_right = vr_numerator / vr_denominator
         else:
             v_right = 0.0
+            
+        if vl_denominator > 0:
+            v_left = vl_numerator / vl_denominator
+        else:
+            v_left = 0.0
         
         # Clip to output range
-        v_left = max(-0.5, min(0.5, v_left))
-        v_right = max(-0.5, min(0.5, v_right))
+        v_right = max(-0.55, min(0.55, v_right))
+        v_left = max(-0.55, min(0.55, v_left))
         
         return v_left, v_right
     
@@ -345,6 +364,10 @@ class FuzzyTrajectoryController(Node):
     
     def control_loop(self):
         """Main control loop"""
+        # Check if shutting down
+        if self.is_shutdown:
+            return
+            
         if not self.path_received or self.current_path is None:
             return
         if len(self.current_path.poses) == 0:
@@ -393,12 +416,33 @@ class FuzzyTrajectoryController(Node):
 
 def main(args=None):
     rclpy.init(args=args)
+    
+    controller = None
+    
+    def signal_handler(sig, frame):
+        """Handle Ctrl+C (SIGINT) to gracefully stop the robot"""
+        print('\n🛑 Ctrl+C detected! Stopping robot...')
+        if controller is not None:
+            controller.shutdown_callback()
+        if rclpy.ok():
+            rclpy.shutdown()
+        sys.exit(0)
+    
+    # Register signal handler for Ctrl+C
+    signal.signal(signal.SIGINT, signal_handler)
+    
     try:
         controller = FuzzyTrajectoryController()
         rclpy.spin(controller)
     except KeyboardInterrupt:
-        pass
+        print('\n🛑 Keyboard interrupt detected!')
+        if controller is not None:
+            controller.shutdown_callback()
+    except Exception as e:
+        print(f'❌ Error: {e}')
     finally:
+        if controller is not None:
+            controller.stop_robot()
         if rclpy.ok():
             rclpy.shutdown()
 

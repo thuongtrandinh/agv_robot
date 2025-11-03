@@ -17,13 +17,13 @@ amcl:
     laser_min_range: -1.0
     laser_model_type: "likelihood_field"
     max_beams: 60
-    max_particles: 2000
-    min_particles: 500
+    max_particles: 3000  # Increased for larger warehouse
+    min_particles: 800
     odom_frame_id: "odom"
     pf_err: 0.05
     pf_z: 0.99
-    recovery_alpha_fast: 0.0
-    recovery_alpha_slow: 0.0
+    recovery_alpha_fast: 0.1
+    recovery_alpha_slow: 0.001
     resample_interval: 1
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
     save_pose_rate: 0.5
@@ -37,12 +37,14 @@ amcl:
     z_rand: 0.5
     z_short: 0.05
     scan_topic: scan
-    # Initial pose - MUST match robot spawn position in Gazebo!
-    # If robot spawns at (x, y) in launch file, set initial_pose to same values
-    # Otherwise LIDAR scan and map will be misaligned
+    
+    # Initial pose for small_warehouse
+    # Robot spawns near center of warehouse
+    # NOTE: Adjust x, y based on actual spawn position in Gazebo
+    # yaw: 1.5708 = 90 degrees (π/2) if map is rotated
     set_initial_pose: true
     initial_pose:
-      x: 5.0  # Match x_pos in launch_sim.launch.py
-      y: -2.0  # Match y_pos in launch_sim.launch.py
+      x: 0.0  # Adjust to match robot spawn in warehouse
+      y: 0.0  # Adjust to match robot spawn in warehouse  
       z: 0.0
-      yaw: 0.0  # Match robot orientation at spawn
+      yaw: 1.5708  # 90 degrees rotation to align map with scan

@@ -25,7 +25,7 @@ class TrajectoryPublisher(Node):
         super().__init__('trajectory_publisher')
         
         # Parameters
-        self.declare_parameter('trajectory_type', 3)  # 1:Circle, 2:Square, 3:Figure-8
+        self.declare_parameter('trajectory_type', 1)  # 1:Circle, 2:Square, 3:Figure-8
         self.declare_parameter('publish_rate', 10.0)  # Hz
         self.declare_parameter('path_points', 200)    # Number of points in path
         self.declare_parameter('preview_time', 20.0)  # Seconds of trajectory to preview
@@ -66,7 +66,7 @@ class TrajectoryPublisher(Node):
             x_ref, y_ref, theta_ref
         """
         # Parameters
-        R = 2.0           # Radius [m]
+        R = 5.0           # Radius [m] - Increased for better visibility in large maps
         omega = 0.2       # Angular velocity [rad/s]
         center = [0, 0]   # Center of circle
         
@@ -88,8 +88,8 @@ class TrajectoryPublisher(Node):
             x_ref, y_ref, theta_ref
         """
         # Parameters
-        side = 4.0          # Side length [m]
-        T_side = 20.0       # Time per side (s) -> v = 4/20 = 0.2 m/s
+        side = 8.0          # Side length [m] - Increased for better visibility
+        T_side = 20.0       # Time per side (s) -> v = 8/20 = 0.4 m/s
         T_period = 4 * T_side  # Period (time for one complete loop)
         
         # Compute current position on square
@@ -129,7 +129,7 @@ class TrajectoryPublisher(Node):
             x_ref, y_ref, theta_ref
         """
         # Parameters
-        A = 2.0           # Amplitude (half width)
+        A = 5.0           # Amplitude (half width) - Increased for better visibility
         omega = 0.2       # Angular velocity [rad/s]
         
         # Compute trajectory (Lemniscate of Gerono parametric equations)
