@@ -135,87 +135,52 @@ class FuzzyTrajectoryController(Node):
     
     def setup_fuzzy_system(self):
         """Setup fuzzy membership functions and rules"""
-        # Define membership function parameters for e_D (distance error in meters)
+        # 🔧 IMPROVED v2: Even tighter distance MFs for aggressive tracking
+        # More responsive to small errors
         self.e_d_mf = {
-            'VS': ('trap', [0, 0, 0.5, 1.25]),
-            'S': ('tri', [0, 1.25, 2.5]),
-            'M': ('tri', [1.25, 2.5, 3.75]),
-            'B': ('tri', [2.5, 3.75, 5.0]),
-            'VB': ('trap', [3.75, 5.0, 10, 20]),
+            'VS': ('trap', [0, 0, 0.2, 0.5]),      # Very Small: 0-0.5m
+            'S': ('tri', [0.2, 0.6, 1.2]),         # Small: 0.2-1.2m
+            'M': ('tri', [0.6, 1.5, 2.5]),         # Medium: 0.6-2.5m
+            'B': ('tri', [1.5, 3.0, 4.5]),         # Big: 1.5-4.5m
+            'VB': ('trap', [3.0, 5.0, 10, 20]),    # Very Big: >3.0m
         }
         
-        # Define membership function parameters for e_Theta (angle error in degrees)
+        # 🔧 IMPROVED v2: Tighter angle control for smooth turning
         self.e_theta_mf = {
-            'NB': ('trap', [-180, -180, -60, -30]),
-            'NM': ('tri', [-60, -30, -5]),
-            'NS': ('tri', [-30, -5, 0]),
-            'ZE': ('tri', [-5, 0, 5]),
-            'PS': ('tri', [0, 5, 30]),
-            'PM': ('tri', [5, 30, 60]),
-            'PB': ('trap', [30, 60, 180, 180])
+            'NB': ('trap', [-180, -180, -50, -30]),  # Negative Big: <-30°
+            'NM': ('tri', [-50, -30, -15]),          # Negative Medium: -50 to -15°
+            'NS': ('tri', [-30, -15, -3]),           # Negative Small: -30 to -3°
+            'ZE': ('tri', [-5, 0, 5]),               # Zero: -5 to 5°
+            'PS': ('tri', [3, 15, 30]),              # Positive Small: 3 to 30°
+            'PM': ('tri', [15, 30, 50]),             # Positive Medium: 15 to 50°
+            'PB': ('trap', [30, 50, 180, 180])       # Positive Big: >30°
         }
         
-        # Sugeno: Output constants (singleton values) for wheel velocities in m/s
-        self.output_constants = {
-            'Z': 0.0,     # Zero
-            'S': 0.15,    # Small
-            'F': 0.25,    # Fair/Medium-Small
-            'M': 0.35,    # Medium
-            'B': 0.45,    # Big
-            'VB': 0.55    # Very Big
+        # � NEW APPROACH: Output for angular velocity ω (rad/s), not wheel velocities
+        # This simplifies control and improves stability
+        self.angular_vel_constants = {
+            'NB': -0.8,    # Turn hard left
+            'NM': -0.5,    # Turn medium left
+            'NS': -0.25,   # Turn soft left
+            'Z': 0.0,      # Straight
+            'PS': 0.25,    # Turn soft right
+            'PM': 0.5,     # Turn medium right
+            'PB': 0.8,     # Turn hard right
         }
         
-        # Fuzzy rule table (Sugeno): (e_D, e_Theta) -> (VR_constant, VL_constant)
-        # Based on the rule table from Fuzzy Logic Designer
-        # Format: (Distance, Angle) -> (VR, VL) where VR=right wheel, VL=left wheel
-        self.rule_table = {
-            # Rule 1-7: D is VS (Very Small)
-            ('VS', 'NB'): ('B', 'Z'),      # rule1: VR=Z, VL=S
-            ('VS', 'NM'): ('M', 'S'),      # rule2: VR=S, VL=M
-            ('VS', 'NS'): ('F', 'S'),      # rule3: VR=F, VL=S
-            ('VS', 'ZE'): ('S', 'S'),      # rule4: VR=S, VL=S (ZE = Z in image)
-            ('VS', 'PS'): ('S', 'F'),      # rule5: VR=S, VL=F
-            ('VS', 'PM'): ('S', 'M'),      # rule6: VR=M, VL=S
-            ('VS', 'PB'): ('Z', 'B'),      # rule7: VR=Z, VL=B
-            
-            # Rule 8-14: D is S (Small)
-            ('S', 'NB'): ('VB', 'Z'),      # rule8: VR=VB, VL=S
-            ('S', 'NM'): ('B', 'S'),      # rule9: VR=S, VL=VB
-            ('S', 'NS'): ('M', 'F'),       # rule10: VR=M, VL=S
-            ('S', 'ZE'): ('F', 'F'),       # rule11: VR=F, VL=M
-            ('S', 'PS'): ('F', 'M'),       # rule12: VR=S, VL=M
-            ('S', 'PM'): ('S', 'B'),       # rule13: VR=F, VL=F
-            ('S', 'PB'): ('Z', 'VB'),       # rule14: VR=S, VL=S
-            
-            # Rule 15-21: D is M (Medium)
-            ('M', 'NB'): ('VB', 'Z'),      # rule15: VR=VB, VL=Z
-            ('M', 'NM'): ('VB', 'F'),      # rule16: VR=VB, VL=F
-            ('M', 'NS'): ('B', 'M'),       # rule17: VR=B, VL=M
-            ('M', 'ZE'): ('M', 'M'),       # rule18: VR=M, VL=M
-            ('M', 'PS'): ('M', 'B'),       # rule19: VR=M, VL=B
-            ('M', 'PM'): ('F', 'VB'),      # rule20: VR=F, VL=VB
-            ('M', 'PB'): ('Z', 'VB'),      # rule21: VR=Z, VL=VB
-            
-            # Rule 22-28: D is B (Big)
-            ('B', 'NB'): ('VB', 'Z'),      # rule22: VR=VB, VL=Z
-            ('B', 'NM'): ('VB', 'S'),      # rule23: VR=VB, VL=S
-            ('B', 'NS'): ('B', 'M'),       # rule24: VR=B, VL=M
-            ('B', 'ZE'): ('B', 'B'),       # rule25: VR=B, VL=B
-            ('B', 'PS'): ('M', 'B'),       # rule26: VR=M, VL=B
-            ('B', 'PM'): ('S', 'VB'),      # rule27: VR=S, VL=VB
-            ('B', 'PB'): ('Z', 'VB'),      # rule28: VR=Z, VL=VB
-            
-            # Rule 29-35: D is VB (Very Big)
-            ('VB', 'NB'): ('VB', 'Z'),     # rule29: VR=VB, VL=Z
-            ('VB', 'NM'): ('VB', 'F'),     # rule30: VR=VB, VL=F
-            ('VB', 'NS'): ('B', 'M'),      # rule31: VR=B, VL=M
-            ('VB', 'ZE'): ('VB', 'VB'),    # rule32: VR=VB, VL=VB
-            ('VB', 'PS'): ('M', 'B'),      # rule33: VR=M, VL=B
-            ('VB', 'PM'): ('F', 'VB'),     # rule34: VR=F, VL=VB
-            ('VB', 'PB'): ('Z', 'VB'),     # rule35: VR=Z, VL=VB
+        # 🚀 NEW: Fuzzy rule table for angular velocity based on angle error ONLY
+        # Distance affects linear velocity separately
+        self.angular_rules = {
+            'NB': 'NB',  # Very negative angle → Turn hard left
+            'NM': 'NM',  # Medium negative → Turn medium left
+            'NS': 'NS',  # Small negative → Turn soft left
+            'ZE': 'Z',   # Zero angle → Straight
+            'PS': 'PS',  # Small positive → Turn soft right
+            'PM': 'PM',  # Medium positive → Turn medium right
+            'PB': 'PB',  # Very positive → Turn hard right
         }
         
-        self.get_logger().info(f'Created {len(self.rule_table)} fuzzy rules')
+        self.get_logger().info(f'Fuzzy system initialized with {len(self.angular_rules)} angular rules')
     
     def fuzzify(self, value, mf_dict):
         """Compute membership degrees for a crisp value"""
@@ -228,54 +193,54 @@ class FuzzyTrajectoryController(Node):
         return memberships
     
     def fuzzy_inference(self, e_d, e_theta_deg):
-        """Apply fuzzy inference using Sugeno method
+        """Apply fuzzy inference using simplified Sugeno method
         
-        Sugeno method uses weighted average of constant outputs
-        instead of defuzzifying membership functions like Mamdani.
-        Rule table format: (Distance, Angle) -> (VR, VL) where VR=right, VL=left
+        🚀 NEW APPROACH:
+        - Angular velocity (ω) controlled by fuzzy logic based on angle error
+        - Linear velocity (v) controlled by proportional gain based on distance
+        - This decoupling simplifies control and improves stability
         """
-        # Fuzzify inputs
-        e_d_fuzz = self.fuzzify(e_d, self.e_d_mf)
+        # Fuzzify angle error for angular velocity control
         e_theta_fuzz = self.fuzzify(e_theta_deg, self.e_theta_mf)
         
-        # Apply rules and compute weighted outputs (Sugeno)
-        vr_numerator = 0.0
-        vr_denominator = 0.0
-        vl_numerator = 0.0
-        vl_denominator = 0.0
+        # Compute angular velocity using fuzzy rules
+        omega_numerator = 0.0
+        omega_denominator = 0.0
         
-        for (e_d_label, e_theta_label), (vr_label, vl_label) in self.rule_table.items():
-            # Rule firing strength (min for AND operation)
-            strength = min(e_d_fuzz[e_d_label], e_theta_fuzz[e_theta_label])
+        for angle_label, omega_label in self.angular_rules.items():
+            strength = e_theta_fuzz[angle_label]
             
             if strength > 0:
-                # Get constant output values for this rule
-                vr_output = self.output_constants[vr_label]
-                vl_output = self.output_constants[vl_label]
-                
-                # Accumulate weighted sum (Sugeno weighted average)
-                vr_numerator += strength * vr_output
-                vr_denominator += strength
-                
-                vl_numerator += strength * vl_output
-                vl_denominator += strength
+                omega_output = self.angular_vel_constants[omega_label]
+                omega_numerator += strength * omega_output
+                omega_denominator += strength
         
-        # Compute final outputs (weighted average)
-        if vr_denominator > 0:
-            v_right = vr_numerator / vr_denominator
+        # Final angular velocity (weighted average)
+        if omega_denominator > 0:
+            omega = omega_numerator / omega_denominator
         else:
-            v_right = 0.0
-            
-        if vl_denominator > 0:
-            v_left = vl_numerator / vl_denominator
-        else:
-            v_left = 0.0
+            omega = 0.0
         
-        # Clip to output range
-        v_right = max(-0.55, min(0.55, v_right))
-        v_left = max(-0.55, min(0.55, v_left))
+        # 🚀 Linear velocity: Proportional to distance error with saturation
+        # Fast when far, slow when close
+        if e_d < 0.3:  # Very close
+            v = 0.15
+        elif e_d < 1.0:  # Close
+            v = 0.3 + 0.3 * e_d  # 0.3 to 0.6 m/s
+        elif e_d < 3.0:  # Medium distance
+            v = 0.5 + 0.15 * e_d  # 0.5 to 0.95 m/s
+        else:  # Far
+            v = 0.8  # Max speed
         
-        return v_left, v_right
+        # Reduce linear velocity when turning sharply (to prevent overshoot)
+        angle_factor = 1.0 - 0.3 * min(abs(e_theta_deg) / 90.0, 1.0)  # Reduce up to 30%
+        v = v * angle_factor
+        
+        # Clip to limits
+        v = max(0.0, min(self.max_linear_vel, v))
+        omega = max(-self.max_angular_vel, min(self.max_angular_vel, omega))
+        
+        return v, omega
     
     def amcl_pose_callback(self, msg):
         """Update robot pose from AMCL localization
@@ -310,8 +275,17 @@ class FuzzyTrajectoryController(Node):
                 min_dist = dist
                 closest_idx = i
         
-        # Add lookahead: select point ahead of closest point
-        lookahead_points = 10  # Look 10 points ahead
+        # 🔧 IMPROVED v2: Much smaller lookahead for tighter tracking
+        # Pure pursuit with very short lookahead distance
+        if min_dist < 0.3:  # Very close to path
+            lookahead_points = 1  # Almost no lookahead - follow exactly
+        elif min_dist < 1.0:  # Close
+            lookahead_points = 2
+        elif min_dist < 2.0:  # Moderate distance
+            lookahead_points = 3
+        else:  # Far from path
+            lookahead_points = 5  # Larger lookahead to get back on track
+        
         target_idx = min(closest_idx + lookahead_points, len(path.poses) - 1)
         
         return target_idx
@@ -393,9 +367,8 @@ class FuzzyTrajectoryController(Node):
             self.get_logger().info('Goal reached!', throttle_duration_sec=2.0)
             return
         
-        # Apply fuzzy controller
-        v_left, v_right = self.fuzzy_inference(e_d, e_theta_deg)
-        v, omega = self.wheel_to_twist(v_left, v_right)
+        # Apply fuzzy controller (now returns v and omega directly)
+        v, omega = self.fuzzy_inference(e_d, e_theta_deg)
         
         # Publish
         cmd_vel = TwistStamped()
@@ -407,9 +380,8 @@ class FuzzyTrajectoryController(Node):
         
         # Log
         self.get_logger().info(
-            f'eD={e_d:.3f}m, eT={e_theta_deg:.1f}deg | '
-            f'VL={v_left:.3f}, VR={v_right:.3f} | '
-            f'v={v:.3f}, w={omega:.3f}',
+            f'eD={e_d:.3f}m, eT={e_theta_deg:.1f}° | '
+            f'v={v:.3f}m/s, ω={omega:.3f}rad/s',
             throttle_duration_sec=1.0
         )
 

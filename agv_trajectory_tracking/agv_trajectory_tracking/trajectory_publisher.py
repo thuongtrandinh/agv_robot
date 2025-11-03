@@ -29,11 +29,15 @@ class TrajectoryPublisher(Node):
         self.declare_parameter('publish_rate', 10.0)  # Hz
         self.declare_parameter('path_points', 200)    # Number of points in path
         self.declare_parameter('preview_time', 20.0)  # Seconds of trajectory to preview
+        self.declare_parameter('center_x', 5.0)       # Trajectory center X coordinate
+        self.declare_parameter('center_y', -2.0)      # Trajectory center Y coordinate
         
         self.trajectory_type = self.get_parameter('trajectory_type').value
         self.publish_rate = self.get_parameter('publish_rate').value
         self.path_points = self.get_parameter('path_points').value
         self.preview_time = self.get_parameter('preview_time').value
+        self.center_x = self.get_parameter('center_x').value
+        self.center_y = self.get_parameter('center_y').value
         
         # Publisher
         self.path_pub = self.create_publisher(Path, '/trajectory', 10)
@@ -48,6 +52,7 @@ class TrajectoryPublisher(Node):
         
         self.get_logger().info(f'Trajectory Publisher started!')
         self.get_logger().info(f'  Type: {self.get_trajectory_name()}')
+        self.get_logger().info(f'  Center: ({self.center_x:.1f}, {self.center_y:.1f})')
         self.get_logger().info(f'  Publishing at {self.publish_rate} Hz')
         self.get_logger().info(f'  Path points: {self.path_points}')
     
@@ -68,7 +73,9 @@ class TrajectoryPublisher(Node):
         # Parameters
         R = 5.0           # Radius [m] - Increased for better visibility in large maps
         omega = 0.2       # Angular velocity [rad/s]
-        center = [0, 0]   # Center of circle
+        
+        # Use configurable center instead of fixed [0,0]
+        center = [self.center_x, self.center_y]
         
         # Compute trajectory
         phi = omega * t
@@ -92,30 +99,34 @@ class TrajectoryPublisher(Node):
         T_side = 20.0       # Time per side (s) -> v = 8/20 = 0.4 m/s
         T_period = 4 * T_side  # Period (time for one complete loop)
         
-        # Compute current position on square
+        # Compute current position on square (relative to center)
         time_in_period = t % T_period
         current_side = int(time_in_period / T_side)  # Which side (0,1,2,3)
         time_in_side = time_in_period % T_side
         
         if current_side == 0:  # Side 1: Moving up
-            x_ref = side/2
-            y_ref = -side/2 + (side/T_side) * time_in_side
+            x_rel = side/2
+            y_rel = -side/2 + (side/T_side) * time_in_side
             theta_ref = math.pi/2  # 90 degrees
             
         elif current_side == 1:  # Side 2: Moving left
-            x_ref = side/2 - (side/T_side) * time_in_side
-            y_ref = side/2
+            x_rel = side/2 - (side/T_side) * time_in_side
+            y_rel = side/2
             theta_ref = math.pi  # 180 degrees
             
         elif current_side == 2:  # Side 3: Moving down
-            x_ref = -side/2
-            y_ref = side/2 - (side/T_side) * time_in_side
+            x_rel = -side/2
+            y_rel = side/2 - (side/T_side) * time_in_side
             theta_ref = -math.pi/2  # -90 degrees
             
         else:  # Side 4: Moving right
-            x_ref = -side/2 + (side/T_side) * time_in_side
-            y_ref = -side/2
+            x_rel = -side/2 + (side/T_side) * time_in_side
+            y_rel = -side/2
             theta_ref = 0.0  # 0 degrees
+        
+        # Translate to world coordinates with configurable center
+        x_ref = self.center_x + x_rel
+        y_ref = self.center_y + y_rel
         
         return x_ref, y_ref, theta_ref
     
@@ -133,9 +144,14 @@ class TrajectoryPublisher(Node):
         omega = 0.2       # Angular velocity [rad/s]
         
         # Compute trajectory (Lemniscate of Gerono parametric equations)
+        # Relative to origin
         phi = omega * t
-        x_ref = A * math.cos(phi)
-        y_ref = A * math.sin(2*phi) / 2.0
+        x_rel = A * math.cos(phi)
+        y_rel = A * math.sin(2*phi) / 2.0
+        
+        # Translate to world coordinates with configurable center
+        x_ref = self.center_x + x_rel
+        y_ref = self.center_y + y_rel
         
         # Compute derivatives to find tangent angle
         dx_dt = -A * omega * math.sin(phi)

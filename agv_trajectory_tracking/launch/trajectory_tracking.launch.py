@@ -26,6 +26,18 @@ def generate_launch_description():
         description='Trajectory type: 1=Circle, 2=Square, 3=Figure-8'
     )
     
+    center_x_arg = DeclareLaunchArgument(
+        'center_x',
+        default_value='5.0',
+        description='X coordinate of trajectory center'
+    )
+    
+    center_y_arg = DeclareLaunchArgument(
+        'center_y',
+        default_value='-2.0',
+        description='Y coordinate of trajectory center'
+    )
+    
     max_linear_vel_arg = DeclareLaunchArgument(
         'max_linear_vel',
         default_value='1.0',
@@ -40,6 +52,8 @@ def generate_launch_description():
     
     # Get launch configurations
     trajectory_type = LaunchConfiguration('trajectory_type')
+    center_x = LaunchConfiguration('center_x')
+    center_y = LaunchConfiguration('center_y')
     max_linear_vel = LaunchConfiguration('max_linear_vel')
     max_angular_vel = LaunchConfiguration('max_angular_vel')
     
@@ -51,6 +65,8 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'trajectory_type': trajectory_type,
+            'center_x': center_x,
+            'center_y': center_y,
             'publish_rate': 10.0,
             'path_points': 200,
             'preview_time': 20.0,
@@ -87,6 +103,8 @@ def generate_launch_description():
     return LaunchDescription([
         # Launch arguments
         trajectory_type_arg,
+        center_x_arg,
+        center_y_arg,
         max_linear_vel_arg,
         max_angular_vel_arg,
         
