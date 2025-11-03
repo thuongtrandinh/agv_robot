@@ -38,6 +38,12 @@ def generate_launch_description():
         description='Y coordinate of trajectory center'
     )
     
+    radius_arg = DeclareLaunchArgument(
+        'radius',
+        default_value='5.0',
+        description='Circle radius for trajectory (meters)'
+    )
+    
     max_linear_vel_arg = DeclareLaunchArgument(
         'max_linear_vel',
         default_value='1.0',
@@ -54,6 +60,7 @@ def generate_launch_description():
     trajectory_type = LaunchConfiguration('trajectory_type')
     center_x = LaunchConfiguration('center_x')
     center_y = LaunchConfiguration('center_y')
+    radius = LaunchConfiguration('radius')
     max_linear_vel = LaunchConfiguration('max_linear_vel')
     max_angular_vel = LaunchConfiguration('max_angular_vel')
     
@@ -67,6 +74,7 @@ def generate_launch_description():
             'trajectory_type': trajectory_type,
             'center_x': center_x,
             'center_y': center_y,
+            'radius': radius,
             'publish_rate': 10.0,
             'path_points': 200,
             'preview_time': 20.0,
@@ -105,6 +113,7 @@ def generate_launch_description():
         trajectory_type_arg,
         center_x_arg,
         center_y_arg,
+        radius_arg,
         max_linear_vel_arg,
         max_angular_vel_arg,
         

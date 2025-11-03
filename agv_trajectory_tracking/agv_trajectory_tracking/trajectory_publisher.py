@@ -31,6 +31,7 @@ class TrajectoryPublisher(Node):
         self.declare_parameter('preview_time', 20.0)  # Seconds of trajectory to preview
         self.declare_parameter('center_x', 5.0)       # Trajectory center X coordinate
         self.declare_parameter('center_y', -2.0)      # Trajectory center Y coordinate
+        self.declare_parameter('radius', 5.0)         # Circle radius (m)
         
         self.trajectory_type = self.get_parameter('trajectory_type').value
         self.publish_rate = self.get_parameter('publish_rate').value
@@ -38,6 +39,7 @@ class TrajectoryPublisher(Node):
         self.preview_time = self.get_parameter('preview_time').value
         self.center_x = self.get_parameter('center_x').value
         self.center_y = self.get_parameter('center_y').value
+        self.radius = self.get_parameter('radius').value
         
         # Publisher
         self.path_pub = self.create_publisher(Path, '/trajectory', 10)
@@ -53,6 +55,7 @@ class TrajectoryPublisher(Node):
         self.get_logger().info(f'Trajectory Publisher started!')
         self.get_logger().info(f'  Type: {self.get_trajectory_name()}')
         self.get_logger().info(f'  Center: ({self.center_x:.1f}, {self.center_y:.1f})')
+        self.get_logger().info(f'  Radius: {self.radius:.1f} m')
         self.get_logger().info(f'  Publishing at {self.publish_rate} Hz')
         self.get_logger().info(f'  Path points: {self.path_points}')
     
@@ -71,8 +74,8 @@ class TrajectoryPublisher(Node):
             x_ref, y_ref, theta_ref
         """
         # Parameters
-        R = 5.0           # Radius [m] - Increased for better visibility in large maps
-        omega = 0.2       # Angular velocity [rad/s]
+        R = self.radius    # Radius [m] - Use configurable radius
+        omega = 0.2        # Angular velocity [rad/s]
         
         # Use configurable center instead of fixed [0,0]
         center = [self.center_x, self.center_y]
