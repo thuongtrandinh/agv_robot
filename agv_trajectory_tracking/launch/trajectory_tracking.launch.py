@@ -46,13 +46,13 @@ def generate_launch_description():
     
     max_linear_vel_arg = DeclareLaunchArgument(
         'max_linear_vel',
-        default_value='1.0',
+        default_value='1.2',  # Increased from 0.8 for better tracking
         description='Maximum linear velocity (m/s)'
     )
     
     max_angular_vel_arg = DeclareLaunchArgument(
         'max_angular_vel',
-        default_value='1.0',
+        default_value='1.5',  # Increased from 1.0 for sharper turns
         description='Maximum angular velocity (rad/s)'
     )
     
@@ -92,7 +92,7 @@ def generate_launch_description():
             'max_linear_vel': max_linear_vel,
             'max_angular_vel': max_angular_vel,
             'control_frequency': 20.0,
-            'goal_tolerance': 0.15,
+            'goal_tolerance': 0.10,  # Reduced from 0.15 for tighter tracking
         }],
     )
     

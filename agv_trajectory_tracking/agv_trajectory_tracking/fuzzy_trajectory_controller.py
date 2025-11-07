@@ -145,27 +145,26 @@ class FuzzyTrajectoryController(Node):
             'VB': ('trap', [3.0, 5.0, 10, 20]),    # Very Big: >3.0m
         }
         
-        # 🔧 IMPROVED v2: Tighter angle control for smooth turning
+        # 🔧 TUNED v3: Tighter angle thresholds for more responsive turning
         self.e_theta_mf = {
-            'NB': ('trap', [-180, -180, -50, -30]),  # Negative Big: <-30°
-            'NM': ('tri', [-50, -30, -15]),          # Negative Medium: -50 to -15°
-            'NS': ('tri', [-30, -15, -3]),           # Negative Small: -30 to -3°
-            'ZE': ('tri', [-5, 0, 5]),               # Zero: -5 to 5°
-            'PS': ('tri', [3, 15, 30]),              # Positive Small: 3 to 30°
-            'PM': ('tri', [15, 30, 50]),             # Positive Medium: 15 to 50°
-            'PB': ('trap', [30, 50, 180, 180])       # Positive Big: >30°
+            'NB': ('trap', [-180, -180, -45, -25]),  # Negative Big: <-25° (was -30°)
+            'NM': ('tri', [-45, -25, -10]),          # Negative Medium: -45 to -10° (tighter)
+            'NS': ('tri', [-25, -10, -2]),           # Negative Small: -25 to -2° (tighter)
+            'ZE': ('tri', [-3, 0, 3]),               # Zero: -3 to 3° (tighter tolerance)
+            'PS': ('tri', [2, 10, 25]),              # Positive Small: 2 to 25° (tighter)
+            'PM': ('tri', [10, 25, 45]),             # Positive Medium: 10 to 45° (tighter)
+            'PB': ('trap', [25, 45, 180, 180])       # Positive Big: >25° (was 30°)
         }
         
-        # � NEW APPROACH: Output for angular velocity ω (rad/s), not wheel velocities
-        # This simplifies control and improves stability
+        # 🔧 TUNED v3: More aggressive angular velocity for tighter curves
         self.angular_vel_constants = {
-            'NB': -0.8,    # Turn hard left
-            'NM': -0.5,    # Turn medium left
-            'NS': -0.25,   # Turn soft left
+            'NB': -1.0,    # Turn hard left (was -0.8)
+            'NM': -0.6,    # Turn medium left (was -0.5)
+            'NS': -0.3,    # Turn soft left (was -0.25)
             'Z': 0.0,      # Straight
-            'PS': 0.25,    # Turn soft right
-            'PM': 0.5,     # Turn medium right
-            'PB': 0.8,     # Turn hard right
+            'PS': 0.3,     # Turn soft right (was 0.25)
+            'PM': 0.6,     # Turn medium right (was 0.5)
+            'PB': 1.0,     # Turn hard right (was 0.8)
         }
         
         # 🚀 NEW: Fuzzy rule table for angular velocity based on angle error ONLY
@@ -221,19 +220,19 @@ class FuzzyTrajectoryController(Node):
         else:
             omega = 0.0
         
-        # 🚀 Linear velocity: Proportional to distance error with saturation
-        # Fast when far, slow when close
-        if e_d < 0.3:  # Very close
-            v = 0.15
-        elif e_d < 1.0:  # Close
-            v = 0.3 + 0.3 * e_d  # 0.3 to 0.6 m/s
-        elif e_d < 3.0:  # Medium distance
-            v = 0.5 + 0.15 * e_d  # 0.5 to 0.95 m/s
-        else:  # Far
-            v = 0.8  # Max speed
+        # 🚀 TUNED v3: Faster linear velocity for better tracking
+        # Aggressive speed profile to reduce tracking error
+        if e_d < 0.2:  # Very close - maintain minimum speed
+            v = 0.25
+        elif e_d < 0.8:  # Close - ramp up smoothly
+            v = 0.35 + 0.45 * e_d  # 0.35 to 0.71 m/s
+        elif e_d < 2.5:  # Medium distance - high speed
+            v = 0.65 + 0.2 * e_d  # 0.65 to 1.15 m/s (capped at max)
+        else:  # Far - max speed
+            v = 1.0  # Full speed
         
-        # Reduce linear velocity when turning sharply (to prevent overshoot)
-        angle_factor = 1.0 - 0.3 * min(abs(e_theta_deg) / 90.0, 1.0)  # Reduce up to 30%
+        # Reduce linear velocity when turning sharply (smoother but less aggressive)
+        angle_factor = 1.0 - 0.2 * min(abs(e_theta_deg) / 90.0, 1.0)  # Reduce up to 20% (was 30%)
         v = v * angle_factor
         
         # Clip to limits

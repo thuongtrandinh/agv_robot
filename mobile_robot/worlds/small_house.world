@@ -131,34 +131,7 @@
 	</model>
     -->
 	
-	<model name='ChairA_01_001'>
-        <static>true</static>    
-        <include>
-            <uri>model://aws_robomaker_residential_ChairA_01</uri>
-        </include>
-        <pose frame=''>7.11516 0.209028 0.024685 1e-06 -0 -1.55607</pose>
-	</model>
-	<model name='ChairA_01_002'>
-        <static>true</static>    
-        <include>
-            <uri>model://aws_robomaker_residential_ChairA_01</uri>
-        </include>
-        <pose frame=''>6.25506 0.219468 0.011308 0 0 -1.50414</pose>
-	</model>
-	<model name='ChairA_01_003'>
-        <static>true</static>    
-        <include>
-            <uri>model://aws_robomaker_residential_ChairA_01</uri>
-        </include>
-        <pose frame=''>6.06678 1.68075 0.01 0 -0 1.56986</pose>
-	</model>
-	<model name='ChairA_01_004'>
-        <static>true</static>    
-        <include>
-            <uri>model://aws_robomaker_residential_ChairA_01</uri>
-        </include>
-        <pose frame=''>7.00277 1.67074 0 0 -0 1.52363</pose>
-	</model>
+
 	<model name='ChairA_01_005'>
         <static>true</static>    
         <include>
@@ -236,13 +209,7 @@
         </include>
         <pose frame=''>0.842134 -4.996294 0.495067 0 -0 -2.841039</pose>
 	</model>
-	<model name='CoffeeTable_01_001'>
-        <static>true</static>    
-        <include>
-            <uri>model://aws_robomaker_residential_CoffeeTable_01</uri>
-        </include>
-        <pose frame=''>1.512301 -1.733438 0.041983 0.000000 0.000000 0.01000</pose>
-	</model>
+
 	<model name='CookingBench_01_001'>
         <include>
             <uri>model://aws_robomaker_residential_CookingBench_01</uri>
@@ -259,13 +226,7 @@
         <pose frame=''>-9.172642 0.203760 0 0 -0 0</pose>
 	</model>
     
-	<model name='KitchenTable_01_001'>
-        <static>true</static>    
-        <include>
-            <uri>model://aws_robomaker_residential_KitchenTable_01</uri>
-        </include>
-        <pose frame=''>6.55269 0.951173 -0.000006 0 -0 -1.564130</pose>
-	</model>
+
 	<model name='ReadingDesk_01_001'>
         <static>true</static>    
         <include>
@@ -578,13 +539,7 @@
         </include>
         <pose frame=''>9.107968 -2.651726 0.902458 -0.000006 0.000034 0.001290</pose>
 	</model>
-	<model name='SofaC_01_001'>
-        <static>true</static>    
-        <include>
-            <uri>model://aws_robomaker_residential_SofaC_01</uri>
-        </include>
-        <pose frame=''>0.330699 -1.902792 0.065992 0.000000 0.000000 1.571733</pose>
-	</model>
+
 	<model name='Tableware_01_001'>
         <static>true</static>    
         <include>
@@ -592,13 +547,7 @@
         </include>
         <pose frame=''>7.15317 0.982767 0.817812 -0.001238 -0.000976 1.02476</pose>
 	</model>
-	<model name='Trash_01_001'>
-        <static>true</static>    
-        <include>
-            <uri>model://aws_robomaker_residential_Trash_01</uri>
-        </include>
-        <pose frame=''>2.360151 -0.796238 0.011 0 -0 0</pose>
-	</model>
+
     <model name='Trash_01_002'>
         <static>true</static>    
         <include>
