@@ -16,7 +16,9 @@ ekf_filter_node:
       two_d_mode: true
 
       # Whether to broadcast the transformation over the /tf topic. Defaults to true if unspecified.
-      publish_tf: true
+      # IMPORTANT: Set to FALSE for localization - Gazebo diff_drive already publishes odom→base_footprint
+      # Setting to true causes TF conflicts and performance degradation (10Hz instead of 30Hz)
+      publish_tf: false
 
       # ============================================
       # FRAME CONFIGURATION (Standard Pipeline)
