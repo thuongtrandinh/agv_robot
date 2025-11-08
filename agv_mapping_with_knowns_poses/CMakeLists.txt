@@ -30,7 +30,7 @@ install(TARGETS
 )
 
 install(
-  DIRECTORY launch maps
+  DIRECTORY launch maps config
   DESTINATION share/${PROJECT_NAME}
 )
 

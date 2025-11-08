@@ -25,7 +25,7 @@ class TrajectoryPublisher(Node):
         super().__init__('trajectory_publisher')
         
         # Parameters
-        self.declare_parameter('trajectory_type', 1)  # 1:Circle, 2:Square, 3:Figure-8
+        self.declare_parameter('trajectory_type', 2)  # 1:Circle, 2:Square, 3:Figure-8
         self.declare_parameter('publish_rate', 10.0)  # Hz
         self.declare_parameter('path_points', 200)    # Number of points in path
         self.declare_parameter('preview_time', 20.0)  # Seconds of trajectory to preview

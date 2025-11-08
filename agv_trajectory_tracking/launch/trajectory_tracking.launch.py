@@ -22,7 +22,7 @@ def generate_launch_description():
     # Declare arguments
     trajectory_type_arg = DeclareLaunchArgument(
         'trajectory_type',
-        default_value='1',
+        default_value='2',
         description='Trajectory type: 1=Circle, 2=Square, 3=Figure-8'
     )
     

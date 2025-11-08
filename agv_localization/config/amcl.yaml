@@ -11,23 +11,33 @@ amcl:
     beam_skip_threshold: 0.3
     do_beamskip: false
     global_frame_id: "map"
-    lambda_short: 0.1
-    laser_likelihood_max_dist: 2.0
-    laser_max_range: 100.0
-    laser_min_range: -1.0
-    laser_model_type: "likelihood_field"
-    max_beams: 60
-    max_particles: 2000
-    min_particles: 500
     odom_frame_id: "odom"
-    pf_err: 0.05
-    pf_z: 0.99
-    recovery_alpha_fast: 0.0
-    recovery_alpha_slow: 0.0
-    resample_interval: 1
+    base_frame_id: "base_footprint"
+    
+    # ==========================================
+    # ODOMETRY MODEL - Use wheel encoder + IMU
+    # ==========================================
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
-    save_pose_rate: 0.5
-    sigma_hit: 0.2
+    
+    # Odometry noise model (alpha parameters)
+    # BALANCED: Trust EKF but also allow AMCL to correct
+    # Sweet spot: 0.08-0.12 for EKF-filtered odometry
+    alpha1: 0.1   # Rotation noise from rotation
+    alpha2: 0.1   # Rotation noise from translation
+    alpha3: 0.1   # Translation noise from translation
+    alpha4: 0.1   # Translation noise from rotation
+    alpha5: 0.1   # Strafe noise
+    
+    # ==========================================
+    # SENSOR TOPICS
+    # ==========================================
+    scan_topic: scan  # LiDAR topic
+    # AMCL will subscribe to /diff_cont/odom_with_covariance automatically
+    # because it looks for Odometry messages on the odom frame
+    
+    # ==========================================
+    # TRANSFORM & TIMING
+    # ==========================================
     tf_broadcast: true
     transform_tolerance: 1.0
     update_min_a: 0.2
@@ -38,11 +48,59 @@ amcl:
     z_short: 0.05
     scan_topic: scan
     # Initial pose - MUST match robot spawn position in Gazebo!
-    # If robot spawns at (x, y) in launch file, set initial_pose to same values
-    # Otherwise LIDAR scan and map will be misaligned
     set_initial_pose: true
     initial_pose:
-      x: 5.0  # Match x_pos in launch_sim.launch.py
-      y: -2.0  # Match y_pos in launch_sim.launch.py
+      x: 0  # Match x_pos in launch_sim.launch.py
+      y: 0  # Match y_pos in launch_sim.launch.py
       z: 0.0
       yaw: 0.0  # Match robot orientation at spawn
+    
+    # ==========================================
+    # PARTICLE FILTER SETTINGS
+    # ==========================================
+    # TUNED: Fewer particles since EKF odometry is accurate
+    max_particles: 1000   # Reduced from 2000
+    min_particles: 200    # Reduced from 500
+    pf_err: 0.03          # Reduced from 0.05 (tighter convergence)
+    pf_z: 0.99
+    resample_interval: 1
+    
+    # Update thresholds (when to update filter)
+    # TUNED: Update more frequently for smoother tracking
+    update_min_d: 0.1     # Reduced from 0.25 (update every 10cm)
+    update_min_a: 0.1     # Reduced from 0.2 (update every ~6 degrees)
+    
+    # ==========================================
+    # LASER MODEL
+    # ==========================================
+    laser_model_type: "likelihood_field"
+    max_beams: 60
+    laser_max_range: 100.0
+    laser_min_range: -1.0
+    laser_likelihood_max_dist: 2.0
+    
+    # Laser model weights
+    # BALANCED: Trust laser but also account for noise
+    z_hit: 0.7        # Good matches (not too high)
+    z_short: 0.05
+    z_max: 0.05
+    z_rand: 0.2       # Some random noise tolerance
+    sigma_hit: 0.18   # Moderate beam matching tolerance
+    lambda_short: 0.1
+    
+    # Beam skip (for computational efficiency)
+    do_beamskip: false
+    beam_skip_distance: 0.5
+    beam_skip_error_threshold: 0.9
+    beam_skip_threshold: 0.3
+    
+    # ==========================================
+    # RECOVERY BEHAVIOR
+    # ==========================================
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+    
+    # ==========================================
+    # POSE PUBLISHING
+    # ==========================================
+    save_pose_rate: 0.5

@@ -31,6 +31,71 @@ def generate_launch_description():
         description="Full path to slam yaml file to load"
     )
     
+    # ==========================================
+    # SENSOR FUSION: EKF for reducing odometry drift
+    # ==========================================
+    # Pipeline: [IMU + Encoder] → EKF → /odometry/filtered → SLAM Toolbox
+    
+    ekf_config_file = os.path.join(
+        get_package_share_directory("agv_localization"),
+        "config",
+        "ekf.yaml"
+    )
+    
+    # 1. IMU Republisher - Add covariance to Gazebo IMU
+    # TUNED: High covariance to reduce jerky motion during SLAM
+    imu_republisher = Node(
+        package="agv_localization",
+        executable="imu_republisher",
+        name="imu_republisher",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"input_topic": "/imu"},
+            {"output_topic": "/imu_with_covariance"},
+            {"orientation_covariance": 0.1},            # Increased from 0.05
+            {"angular_velocity_covariance": 0.15},      # Increased from 0.08
+            {"linear_acceleration_covariance": 0.25}    # Increased from 0.15
+        ]
+    )
+    
+    # 2. Odometry Republisher - Add covariance to wheel odometry
+    # TUNED: High covariance to reduce jerky motion during SLAM
+    odom_republisher = Node(
+        package="agv_localization",
+        executable="odom_republisher",
+        name="odom_republisher",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"input_topic": "/diff_cont/odom"},
+            {"output_topic": "/diff_cont/odom_with_covariance"},
+            {"pose_x_covariance": 0.05},                # Increased from 0.01
+            {"pose_y_covariance": 0.05},                # Increased from 0.01
+            {"pose_yaw_covariance": 0.1},               # Increased from 0.05
+            {"twist_vx_covariance": 0.05},              # Increased from 0.01
+            {"twist_vy_covariance": 0.05},              # Increased from 0.01
+            {"twist_vyaw_covariance": 0.1}              # Increased from 0.05
+        ]
+    )
+    
+    # 3. EKF Node - Fuse IMU + Encoder to reduce drift
+    ekf_filter = Node(
+        package="robot_localization",
+        executable="ekf_node",
+        name="ekf_filter_node",
+        output="screen",
+        parameters=[
+            ekf_config_file,
+            {"use_sim_time": use_sim_time}
+        ]
+        # Publishes /odometry/filtered (much better than raw encoder!)
+    )
+    
+    # ==========================================
+    # SLAM NODES
+    # ==========================================
+    
     nav2_map_saver = Node(
         package="nav2_map_server",
         executable="map_saver_server",
@@ -53,6 +118,10 @@ def generate_launch_description():
             slam_config,
             {"use_sim_time": use_sim_time},
         ],
+        remappings=[
+            # CRITICAL: Use filtered odometry instead of raw /odom
+            ("/odom", "/odometry/filtered"),
+        ]
     )
 
     nav2_lifecycle_manager = Node(
@@ -70,6 +139,11 @@ def generate_launch_description():
     return LaunchDescription([
         use_sim_time_arg,
         slam_config_arg,
+        # Sensor fusion nodes (reduce odometry drift!)
+        imu_republisher,
+        odom_republisher,
+        ekf_filter,
+        # SLAM nodes
         nav2_map_saver,
         slam_toolbox,
         nav2_lifecycle_manager,
