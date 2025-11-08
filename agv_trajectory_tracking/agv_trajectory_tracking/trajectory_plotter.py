@@ -137,23 +137,60 @@ class TrajectoryPlotter(Node):
                 self.actual_x.pop(0)
                 self.actual_y.pop(0)
             
-            # Compute error to closest reference point
-            if len(self.ref_x) > 0:
-                min_dist = float('inf')
-                for i in range(len(self.ref_x)):
-                    ref_point = (self.ref_x[i], self.ref_y[i])
-                    dist = self.distance(point, ref_point)
-                    if dist < min_dist:
-                        min_dist = dist
+            # 🚀 IMPROVED: Compute CROSS-TRACK ERROR (perpendicular distance to path)
+            # This is more accurate than Euclidean distance to nearest point
+            if len(self.ref_x) > 1:  # Need at least 2 points to compute cross-track
+                cross_track_error = self.compute_cross_track_error(point)
                 
                 current_time = self.get_clock().now().nanoseconds / 1e9 - self.start_time
                 self.time_stamps.append(current_time)
-                self.errors.append(min_dist)
+                self.errors.append(cross_track_error)
                 
                 # Limit history
                 if len(self.errors) > self.max_history:
                     self.time_stamps.pop(0)
                     self.errors.pop(0)
+    
+    def compute_cross_track_error(self, point):
+        """Compute perpendicular distance from point to closest path segment
+        
+        🚀 This is the CORRECT metric for trajectory tracking!
+        Returns the shortest perpendicular distance to the path.
+        """
+        px, py = point
+        min_cross_track = float('inf')
+        
+        # Check distance to each path segment
+        for i in range(len(self.ref_x) - 1):
+            x1, y1 = self.ref_x[i], self.ref_y[i]
+            x2, y2 = self.ref_x[i + 1], self.ref_y[i + 1]
+            
+            # Vector from segment start to end
+            dx = x2 - x1
+            dy = y2 - y1
+            
+            # Length of segment
+            seg_length_sq = dx*dx + dy*dy
+            
+            if seg_length_sq < 1e-6:  # Degenerate segment
+                # Just compute distance to point
+                dist = math.sqrt((px - x1)**2 + (py - y1)**2)
+            else:
+                # Parameter t represents projection of point onto line segment
+                # t=0 means projection at (x1,y1), t=1 means at (x2,y2)
+                t = max(0.0, min(1.0, ((px - x1)*dx + (py - y1)*dy) / seg_length_sq))
+                
+                # Find closest point on segment
+                closest_x = x1 + t * dx
+                closest_y = y1 + t * dy
+                
+                # Distance to closest point (this is cross-track error)
+                dist = math.sqrt((px - closest_x)**2 + (py - closest_y)**2)
+            
+            if dist < min_cross_track:
+                min_cross_track = dist
+        
+        return min_cross_track
     
     def distance(self, p1, p2):
         """Euclidean distance"""

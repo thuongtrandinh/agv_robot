@@ -82,8 +82,11 @@ class FuzzyTrajectoryController(Node):
         self.wheel_base = self.get_parameter('wheel_base').value
         self.max_linear_vel = self.get_parameter('max_linear_vel').value
         self.max_angular_vel = self.get_parameter('max_angular_vel').value
-        self.control_frequency = self.get_parameter('control_frequency').value
+        self.control_freq = self.get_parameter('control_frequency').value
         self.goal_tolerance = self.get_parameter('goal_tolerance').value
+        
+        # 🔧 CRITICAL: Maximum wheel velocity constraint (1.0 m/s per wheel)
+        self.max_wheel_vel = 1.0  # m/s - hardware limit for each motor
         
         # Robot state
         self.robot_x = 0.0
@@ -112,7 +115,7 @@ class FuzzyTrajectoryController(Node):
         self.get_logger().info('Fuzzy system ready!')
         
         # Control timer
-        timer_period = 1.0 / self.control_frequency
+        timer_period = 1.0 / self.control_freq
         self.control_timer = self.create_timer(timer_period, self.control_loop)
         
         self.get_logger().info('Controller started (Pure Python Fuzzy - Sugeno Method)!')
@@ -335,6 +338,42 @@ class FuzzyTrajectoryController(Node):
         omega = max(-self.max_angular_vel, min(self.max_angular_vel, omega))
         return v, omega
     
+    def limit_wheel_velocities(self, v_linear, omega):
+        """Limit twist commands to respect maximum wheel velocity constraint
+        
+        Args:
+            v_linear: Desired linear velocity (m/s)
+            omega: Desired angular velocity (rad/s)
+            
+        Returns:
+            (v_limited, omega_limited): Safe velocities that keep wheel speeds ≤ max_wheel_vel
+            
+        Wheel velocities are:
+            v_left = v_linear - (omega * wheelbase / 2)
+            v_right = v_linear + (omega * wheelbase / 2)
+            
+        We need: max(|v_left|, |v_right|) ≤ max_wheel_vel
+        """
+        # Calculate wheel velocities from desired twist
+        half_wheelbase = self.wheel_base / 2.0
+        v_left = v_linear - (omega * half_wheelbase)
+        v_right = v_linear + (omega * half_wheelbase)
+        
+        # Find maximum wheel velocity
+        max_wheel = max(abs(v_left), abs(v_right))
+        
+        # If exceeds limit, scale down both v and omega proportionally
+        if max_wheel > self.max_wheel_vel:
+            scale = self.max_wheel_vel / max_wheel
+            v_linear *= scale
+            omega *= scale
+            
+            # Recalculate to verify
+            v_left = v_linear - (omega * half_wheelbase)
+            v_right = v_linear + (omega * half_wheelbase)
+        
+        return v_linear, omega
+    
     def control_loop(self):
         """Main control loop"""
         # Check if shutting down
@@ -368,6 +407,9 @@ class FuzzyTrajectoryController(Node):
         
         # Apply fuzzy controller (now returns v and omega directly)
         v, omega = self.fuzzy_inference(e_d, e_theta_deg)
+        
+        # 🔧 CRITICAL: Limit velocities to respect wheel velocity constraints
+        v, omega = self.limit_wheel_velocities(v, omega)
         
         # Publish
         cmd_vel = TwistStamped()
