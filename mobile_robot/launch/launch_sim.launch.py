@@ -140,6 +140,15 @@ def launch_setup(context, *args, **kwargs):
         output='screen'
     )
 
+    # Aruco detector
+    aruco_detector = Node(
+        package='agv_localization',
+        executable='aruco_detector_sim',
+        name='aruco_detector',
+        parameters=[{'use_sim_time': use_sim_time}],
+        output='screen'
+    )
+
     # Gazebo launch - IMPORTANT: Force simulation time and sync
     gazebo_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
@@ -164,6 +173,7 @@ def launch_setup(context, *args, **kwargs):
         rviz,
         gz_spawn_entity,
         scan_republisher,  # Add scan republisher
+        aruco_detector,
         RegisterEventHandler(
             event_handler=OnProcessExit(
                 target_action=gz_spawn_entity,
