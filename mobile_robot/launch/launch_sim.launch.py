@@ -19,6 +19,8 @@ def launch_setup(context, *args, **kwargs):
     use_sim_time_str = context.launch_configurations['use_sim_time']
     use_sim_time = use_sim_time_str.lower() == 'true'  # Convert string to boolean
     init_height = context.launch_configurations['height']
+    init_x = context.launch_configurations['x_pos']
+    init_y = context.launch_configurations['y_pos']
     world_name = context.launch_configurations['world']
     
     pkg_path = os.path.join(get_package_share_directory(package_name))
@@ -72,12 +74,13 @@ def launch_setup(context, *args, **kwargs):
         output='screen'
     )
 
-    # Gazebo spawn entity with timing
+    # Gazebo spawn entity with x, y, z coordinates
     gz_spawn_entity = Node(
         package='ros_gz_sim',
         executable='create',
         output='screen',
-        arguments=['-topic', 'robot_description', '-entity', 'my_bot', '-z', init_height],
+        arguments=['-topic', 'robot_description', '-entity', 'my_bot', 
+                   '-x', init_x, '-y', init_y, '-z', init_height],
         parameters=[{'use_sim_time': use_sim_time}],
     )
 
@@ -151,9 +154,9 @@ def launch_setup(context, *args, **kwargs):
     )
 
     return [
-        # 🔥 CRITICAL ORDER: Bridge first for time sync, then Gazebo
-        bridge,
+        # 🔥 CRITICAL ORDER: Gazebo first to be the clock source, then the bridge
         gazebo_launch,
+        bridge,
         robot_state_publisher,
         rviz,
         gz_spawn_entity,
@@ -181,6 +184,18 @@ def generate_launch_description():
         description='Use simulation time'
     )
 
+    x_pos_arg = DeclareLaunchArgument(
+        'x_pos',
+        default_value='5.0',
+        description='Initial X position of robot in simulation'
+    )
+
+    y_pos_arg = DeclareLaunchArgument(
+        'y_pos',
+        default_value='-2.0',
+        description='Initial Y position of robot in simulation'
+    )
+
     height_arg = DeclareLaunchArgument(
         'height',
         default_value='0.2',
@@ -196,11 +211,14 @@ def generate_launch_description():
     world_arg = DeclareLaunchArgument(
         'world',
         default_value='small_house.world',
-        description='World file name (in worlds folder)'
+        description='World file to load. Options: small_house.world, small_warehouse.world',
+        choices=['small_house.world', 'small_warehouse.world']
     )
 
     return LaunchDescription([
         use_sim_time_arg,
+        x_pos_arg,
+        y_pos_arg,
         height_arg,
         gui_arg,
         world_arg,
