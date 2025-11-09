@@ -79,11 +79,8 @@ def launch_setup(context, *args, **kwargs):
             {"initial_pose.y": init_y},
             {"initial_pose.z": 0.0},
             {"initial_pose.yaw": init_yaw},
-        ],
-        remappings=[
-            # Subscribe to EKF filtered output (IMU + Encoder fusion)
-            ("/odom", "/odometry/filtered"),
         ]
+        # No remapping needed - AMCL uses TF (odom->base_footprint) from EKF
     )
 
     nav2_lifecycle_manager = Node(

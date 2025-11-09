@@ -48,26 +48,8 @@ target_link_libraries(mapping_aruco ${OpenCV_LIBRARIES} yaml-cpp)
 # Thêm thư mục include vào đường dẫn của trình biên dịch
 include_directories(include)
 
-<<<<<<< HEAD
-add_executable(agv_mapping_with_knowns_poses src/mapping_with_knowns_poses.cpp)
-ament_target_dependencies(agv_mapping_with_knowns_poses rclcpp sensor_msgs tf2_ros nav_msgs geometry_msgs tf2)
-
-install(
-  DIRECTORY include
-  DESTINATION include
-)
-
-install(TARGETS
-  agv_mapping_with_knowns_poses
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-install(
-  DIRECTORY launch maps config
-=======
 # Install resources
-install(DIRECTORY launch maps
->>>>>>> 9d3407644596706568c23a5bf8361ad8ee59e2de
+install(DIRECTORY launch maps config
   DESTINATION share/${PROJECT_NAME}
 )
 

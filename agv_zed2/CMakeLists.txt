@@ -53,9 +53,9 @@ install(PROGRAMS
   scripts/aruco_localizer.py
   DESTINATION lib/${PROJECT_NAME}
 )
+
 install(DIRECTORY 
-config 
-map
+  config
   DESTINATION share/${PROJECT_NAME}
 )
 
