@@ -102,7 +102,7 @@ def launch_setup(context, *args, **kwargs):
     # TF: map → odom → base_footprint
     
     # 1. IMU Republisher - Add covariance to Gazebo IMU data
-    # TUNED for LOCALIZATION: Lower covariance for better accuracy
+    # TUNED for LOCALIZATION with EKF: Lower covariance = trust IMU more
     imu_republisher = Node(
         package="agv_localization",
         executable="imu_republisher",
@@ -112,14 +112,15 @@ def launch_setup(context, *args, **kwargs):
             {"use_sim_time": use_sim_time},
             {"input_topic": "/imu"},
             {"output_topic": "/imu_with_covariance"},
-            {"orientation_covariance": 0.02},           # Lower than SLAM
-            {"angular_velocity_covariance": 0.03},      # Lower than SLAM
-            {"linear_acceleration_covariance": 0.06}    # Lower than SLAM
+            {"orientation_covariance": 0.01},           # CRITICAL: Trust IMU yaw
+            {"angular_velocity_covariance": 0.01},      # CRITICAL: Trust IMU angular velocity
+            {"linear_acceleration_covariance": 0.02}    # Used for ax by EKF
         ]
     )
     
     # 2. Odometry Republisher - Add covariance to diff_drive_controller odometry
-    # TUNED for LOCALIZATION: Lower covariance for better accuracy
+    # TUNED for LOCALIZATION with EKF: Match actual encoder accuracy
+    # Lower values = trust encoder more, higher values = trust less
     odom_republisher = Node(
         package="agv_localization",
         executable="odom_republisher",
@@ -129,12 +130,12 @@ def launch_setup(context, *args, **kwargs):
             {"use_sim_time": use_sim_time},
             {"input_topic": "/diff_cont/odom"},
             {"output_topic": "/diff_cont/odom_with_covariance"},
-            {"pose_x_covariance": 0.002},               # Lower than SLAM
-            {"pose_y_covariance": 0.002},               # Lower than SLAM
-            {"pose_yaw_covariance": 0.02},              # Lower than SLAM
-            {"twist_vx_covariance": 0.005},             # Lower than SLAM
-            {"twist_vy_covariance": 0.005},             # Lower than SLAM
-            {"twist_vyaw_covariance": 0.02}             # Lower than SLAM
+            {"pose_x_covariance": 0.001},               # Not used by EKF (velocity-only)
+            {"pose_y_covariance": 0.001},               # Not used by EKF (velocity-only)
+            {"pose_yaw_covariance": 0.01},              # Not used by EKF (velocity-only)
+            {"twist_vx_covariance": 0.002},             # CRITICAL: Trust encoder vx
+            {"twist_vy_covariance": 0.002},             # CRITICAL: Trust encoder vy (should be ~0)
+            {"twist_vyaw_covariance": 0.01}             # CRITICAL: Trust encoder vyaw
         ]
     )
     
