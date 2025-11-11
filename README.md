@@ -20,7 +20,7 @@ Script `run_sim.sh` sẽ tự động khởi chạy tất cả các thành phầ
 
 #### Cách chạy đơn giản:
 ```bash
-cd /home/thuong/ros2_ws
+cd ~/ros2_ws
 ./run_sim.sh
 ```
 

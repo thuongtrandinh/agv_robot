@@ -37,7 +37,6 @@ class AgvIrttStarNode(Node):
 
         # Subscriptions
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, 10)
-        # Loại bỏ sub 'initialpose', thay vào đó sẽ dùng TF
         # self.create_subscription(PoseWithCovarianceStamped, '/initialpose', self.start_callback, 10)
         self.create_subscription(PoseStamped, '/goal_pose', self.goal_callback, 10)
 
@@ -56,30 +55,32 @@ class AgvIrttStarNode(Node):
 
         self.get_logger().info("Global planner node started. Waiting for map and goal.")
 
+
     def map_callback(self, msg: OccupancyGrid):
         self.map_res = msg.info.resolution
         self.map_origin = msg.info.origin.position
         self.map_width = msg.info.width
         self.map_height = msg.info.height
-        self.map_frame_id = msg.header.frame_id # Lấy frame_id từ bản đồ
+        self.map_frame_id = msg.header.frame_id
 
         data = np.array(msg.data, dtype=np.int8).reshape((self.map_height, self.map_width))
-        data = np.flipud(data)  # 🔁 đảo ngược theo trục y để (0,0) là top-left
+        data = np.flipud(data)
 
         raw_map_data = (data > 50)  # True = obstacle
 
-        # (B) Inflate (giãn) vật cản theo bán kính robot
-        # Sử dụng toàn bộ bán kính robot để tính toán vùng phồng, đảm bảo an toàn tối đa
+        # Inflate obstacles based on robot radius
         inflate_cells = int(self.robot_radius / self.map_res)
         self.get_logger().info(f"Inflating map by {inflate_cells} cells for a robot radius of {self.robot_radius}m.")
         self.map_data = binary_dilation(raw_map_data, iterations=inflate_cells)
 
-        # (F) Precompute free-space mask để lấy mẫu nhanh
-        ys, xs = np.where(~self.map_data) # ~self.map_data for free cells (False)
-        # Cập nhật công thức tính Y để khớp với việc đảo trục Y
+        # Precompute free-space mask
+        ys, xs = np.where(~self.map_data)
         self.free_points = np.stack([xs * self.map_res + self.map_origin.x,
-                                     (self.map_height - 1 - ys) * self.map_res + self.map_origin.y], axis=1)
+                                    (self.map_height - 1 - ys) * self.map_res + self.map_origin.y], axis=1)
         self.get_logger().info(f"Map received: {self.map_width}x{self.map_height} in frame '{self.map_frame_id}'")
+
+        if self.map_data is not None:
+            self.get_logger().info("Map is successfully received and processed.")
 
     def goal_callback(self, msg: PoseStamped):
         # Khi nhận được goal, lấy vị trí hiện tại của robot làm điểm bắt đầu

@@ -26,9 +26,9 @@ class TrajectoryPublisher(Node):
         
         # Parameters
         self.declare_parameter('trajectory_type', 2)  # 1:Circle, 2:Square, 3:Figure-8
-        self.declare_parameter('publish_rate', 10.0)  # Hz
+        self.declare_parameter('publish_rate', 50.0)  # Hz
         self.declare_parameter('path_points', 200)    # Number of points in path
-        self.declare_parameter('preview_time', 20.0)  # Seconds of trajectory to preview
+        self.declare_parameter('preview_time', 10.0)  # Seconds of trajectory to preview
         self.declare_parameter('center_x', 5.0)       # Trajectory center X coordinate
         self.declare_parameter('center_y', -2.0)      # Trajectory center Y coordinate
         self.declare_parameter('radius', 5.0)         # Circle radius (m)
@@ -214,58 +214,61 @@ class TrajectoryPublisher(Node):
         return x, y, z, w
     
     def generate_path_message(self):
-        """Generate Path message with trajectory points"""
+        """Generate Path message with trajectory reference points"""
         path_msg = Path()
         path_msg.header.stamp = self.get_clock().now().to_msg()
         path_msg.header.frame_id = 'map'
         
-        # Generate path points looking ahead
-        dt_path = self.preview_time / self.path_points
+        # Generate path points looking ahead (not the entire path, just reference points)
+        dt_path = self.preview_time / self.path_points  # Time interval for each point
         
         for i in range(self.path_points):
             t = self.current_time + i * dt_path
             x_ref, y_ref, theta_ref = self.trajectory_reference(t)
             theta_ref = self.normalize_angle(theta_ref)
             
-            # Create PoseStamped
+            # Create PoseStamped message for each reference point
             pose_stamped = PoseStamped()
             pose_stamped.header.stamp = path_msg.header.stamp
             pose_stamped.header.frame_id = 'map'
             
-            # Position
+            # Set position of the reference point
             pose_stamped.pose.position.x = x_ref
             pose_stamped.pose.position.y = y_ref
             pose_stamped.pose.position.z = 0.0
             
-            # Orientation (from yaw angle)
+            # Convert yaw angle (theta_ref) to quaternion orientation
             qx, qy, qz, qw = self.quaternion_from_euler(0.0, 0.0, theta_ref)
             pose_stamped.pose.orientation.x = qx
             pose_stamped.pose.orientation.y = qy
             pose_stamped.pose.orientation.z = qz
             pose_stamped.pose.orientation.w = qw
             
+            # Append the reference point to the path
             path_msg.poses.append(pose_stamped)
         
         return path_msg
+
     
     def publish_trajectory(self):
-        """Timer callback to publish trajectory"""
-        # Generate and publish path
+        """Timer callback to publish reference trajectory points"""
+        # Generate and publish the reference points in the trajectory
         path_msg = self.generate_path_message()
         self.path_pub.publish(path_msg)
         
-        # Update time
+        # Update time for the next set of points
         self.current_time += self.dt
         
         # Get current reference for logging
         x_ref, y_ref, theta_ref = self.trajectory_reference(self.current_time)
         
-        # Log periodically
+        # Log periodically for debugging purposes
         self.get_logger().info(
-            f'Published trajectory | t={self.current_time:.2f}s | '
+            f'Published reference trajectory | t={self.current_time:.2f}s | '
             f'Current ref: x={x_ref:.3f}, y={y_ref:.3f}, θ={math.degrees(theta_ref):.1f}°',
             throttle_duration_sec=2.0
         )
+
 
 
 def main(args=None):

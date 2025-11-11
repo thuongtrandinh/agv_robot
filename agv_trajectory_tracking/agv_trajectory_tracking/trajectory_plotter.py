@@ -27,7 +27,7 @@ class TrajectoryPlotter(Node):
         
         # Parameters
         self.declare_parameter('max_history', 2000)
-        self.declare_parameter('update_interval', 100)  # ms
+        self.declare_parameter('update_interval', 20)  # ms
         
         self.max_history = self.get_parameter('max_history').value
         self.update_interval = self.get_parameter('update_interval').value

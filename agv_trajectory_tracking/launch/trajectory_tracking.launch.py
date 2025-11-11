@@ -75,9 +75,9 @@ def generate_launch_description():
             'center_x': center_x,
             'center_y': center_y,
             'radius': radius,
-            'publish_rate': 10.0,
+            'publish_rate': 50.0,
             'path_points': 200,
-            'preview_time': 20.0,
+            'preview_time': 10.0,
         }],
     )
     
