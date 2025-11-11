@@ -2,9 +2,9 @@
 #include <rclcpp/qos.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
+#include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
-#include <geometry_msgs/msg/pose_array.hpp>
 #include <std_msgs/msg/int32_multi_array.hpp>
 #include <std_msgs/msg/float32_multi_array.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
@@ -18,13 +18,6 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
-
-// Yaml + filesystem
-#include <yaml-cpp/yaml.h>
-#include <ament_index_cpp/get_package_share_directory.hpp>
-#include <filesystem>
-#include <fstream>
-#include <set>
 
 class SimArucoNode : public rclcpp::Node {
 public:
@@ -42,10 +35,10 @@ public:
     pub_pose_array_ = this->create_publisher<geometry_msgs::msg::PoseArray>("aruco/poses", 10);
     pub_pose_       = this->create_publisher<geometry_msgs::msg::PoseStamped>("aruco/pose", 10);
     pub_pose_cov_   = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("aruco/pose_with_covariance", 10);
-    pub_image_      = this->create_publisher<sensor_msgs::msg::Image>("aruco/image", 5);
     pub_ids_        = this->create_publisher<std_msgs::msg::Int32MultiArray>("aruco/ids", 10);
     pub_info_       = this->create_publisher<std_msgs::msg::Float32MultiArray>("aruco/info", 10);
     pub_markers_    = this->create_publisher<visualization_msgs::msg::MarkerArray>("aruco/markers", 10);
+    pub_image_      = this->create_publisher<sensor_msgs::msg::Image>("aruco/image", 5);  // Added pub_image_
 
     // TF Broadcaster
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
@@ -60,15 +53,9 @@ public:
       image_topic_, sensor_qos,
       std::bind(&SimArucoNode::imageCallback, this, std::placeholders::_1));
 
-    // Setup save path
-    pkg_share_dir_ = ament_index_cpp::get_package_share_directory("mobile_robot");
-    save_dir_ = pkg_share_dir_ + "/maps/aruco_markers";
-    save_path_ = save_dir_ + "/aruco_markers.yaml";
-    std::filesystem::create_directories(save_dir_);
-
     RCLCPP_INFO(this->get_logger(),
-      "✅ ArUco detector started.\n   Image: %s\n   CameraInfo: %s\n   Marker size: %.3f m\n   Save path: %s",
-      image_topic_.c_str(), camera_info_topic_.c_str(), marker_size_, save_path_.c_str());
+      "✅ ArUco detector started.\n   Image: %s\n   CameraInfo: %s\n   Marker size: %.3f m",
+      image_topic_.c_str(), camera_info_topic_.c_str(), marker_size_);
   }
 
 private:
@@ -115,17 +102,14 @@ private:
     std::vector<std::vector<cv::Point2f>> corners;
     cv::aruco::detectMarkers(frame_bgr, dictionary_, corners, ids);
 
-    // DEBUG: Log detection status
-    static int frame_count = 0;
-    if (++frame_count % 30 == 0) {  // Every 30 frames (~1 second at 30 fps)
-      if (!ids.empty()) {
-        RCLCPP_INFO(this->get_logger(), "✅ Detected %zu ArUco markers: ", ids.size());
-        for (size_t i = 0; i < ids.size(); i++) {
-          RCLCPP_INFO(this->get_logger(), "   - Marker ID: %d", ids[i]);
-        }
-      } else {
-        RCLCPP_INFO(this->get_logger(), "❌ No ArUco markers detected in frame");
+    // Log detection status
+    if (!ids.empty()) {
+      RCLCPP_INFO(this->get_logger(), "✅ Detected %zu ArUco markers: ", ids.size());
+      for (size_t i = 0; i < ids.size(); i++) {
+        RCLCPP_INFO(this->get_logger(), "   - Marker ID: %d", ids[i]);
       }
+    } else {
+      RCLCPP_INFO(this->get_logger(), "❌ No ArUco markers detected in frame");
     }
 
     geometry_msgs::msg::PoseArray pose_array;
@@ -188,39 +172,6 @@ private:
         info_msg.data.push_back(static_cast<float>(ids[i]));
         info_msg.data.push_back(static_cast<float>(dist));
 
-        // Publish pose of first marker
-        if (i == 0) {
-          geometry_msgs::msg::PoseStamped ps;
-          ps.header = pose_array.header;
-          ps.pose = pose;
-          pub_pose_->publish(ps);
-
-          // Publish pose with covariance for EKF fusion
-          geometry_msgs::msg::PoseWithCovarianceStamped ps_cov;
-          ps_cov.header = pose_array.header;
-          ps_cov.pose.pose = pose;
-          
-          // Set covariance - VERY LOW because we know marker positions exactly!
-          // ArUco is ABSOLUTE ground truth when detected
-          // Slight increase with distance accounts for detection noise only
-          double var_xy = 0.001 + dist * 0.0005;  // Very low base, minimal distance effect
-          double var_z = 0.002 + dist * 0.001;    // Not used in 2D EKF
-          double var_rot = 0.005 + dist * 0.002;  // Low rotation uncertainty
-          
-          // Covariance matrix (6x6): [x, y, z, rot_x, rot_y, rot_z]
-          ps_cov.pose.covariance[0] = var_xy;   // x
-          ps_cov.pose.covariance[7] = var_xy;   // y
-          ps_cov.pose.covariance[14] = var_z;   // z
-          ps_cov.pose.covariance[21] = var_rot; // rot_x
-          ps_cov.pose.covariance[28] = var_rot; // rot_y
-          ps_cov.pose.covariance[35] = var_rot; // rot_z
-          
-          pub_pose_cov_->publish(ps_cov);
-
-          // Save YAML (ghi đè)
-          saveMarkerToYAML(ids[i], ps.pose);
-        }
-
         // Marker RViz
         visualization_msgs::msg::Marker marker;
         marker.header = pose_array.header;
@@ -257,45 +208,12 @@ private:
       pub_markers_->publish(marker_array);
     }
 
-    // Debug image
+    // Debug image: Publish the detected image (if subscribers are present)
     if (pub_image_->get_subscription_count() > 0) {
       auto img_msg = cv_bridge::CvImage(msg->header, "bgr8", frame_bgr).toImageMsg();
       pub_image_->publish(*img_msg);
     }
   }
-
-    // Save markers (append multiple IDs in one session)
-  void saveMarkerToYAML(int id, const geometry_msgs::msg::Pose &pose) {
-    std::string path = "maps/aruco_markers/aruco_markers.yaml";
-    YAML::Node root;
-
-    // Load file cũ nếu tồn tại
-    std::ifstream fin(path);
-    if (fin.good()) {
-      root = YAML::Load(fin);
-      fin.close();
-    }
-
-    // Ghi đè hoặc thêm mới marker
-    YAML::Node marker;
-    marker["position"]["x"] = pose.position.x;
-    marker["position"]["y"] = pose.position.y;
-    marker["position"]["z"] = pose.position.z;
-    marker["orientation"]["x"] = pose.orientation.x;
-    marker["orientation"]["y"] = pose.orientation.y;
-    marker["orientation"]["z"] = pose.orientation.z;
-    marker["orientation"]["w"] = pose.orientation.w;
-
-    root["markers"][id] = marker;
-
-    // Lưu lại
-    std::ofstream fout(path);
-    fout << root;
-    fout.close();
-
-    RCLCPP_INFO(this->get_logger(), "💾 Saved/updated marker %d to %s", id, path.c_str());
-  }
-
 
   // Members
   std::string image_topic_;
@@ -307,18 +225,17 @@ private:
   cv::Mat dist_coeffs_ = cv::Mat::zeros(1,5,CV_64F);
   cv::Ptr<cv::aruco::Dictionary> dictionary_;
 
-  std::string pkg_share_dir_;
-  std::string save_dir_;
-  std::string save_path_;
-
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr cam_info_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr img_sub_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_image_;  // Image publisher
+
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr pub_pose_array_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pub_pose_;
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pub_pose_cov_;
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_image_;
+
   rclcpp::Publisher<std_msgs::msg::Int32MultiArray>::SharedPtr pub_ids_;
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr pub_info_;
+  
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_markers_;
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 };

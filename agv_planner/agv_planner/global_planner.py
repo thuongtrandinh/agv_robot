@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-from nav_msgs.msg import Path, OccupancyGrid
-from geometry_msgs.msg import PoseStamped, Point, PoseWithCovarianceStamped
+from nav_msgs.msg import Path, OccupancyGrid, Odometry
+from geometry_msgs.msg import PoseStamped, Point, PoseWithCovarianceStamped, Quaternion
 from tf2_ros import Buffer, TransformListener
 import numpy as np
+import math
 import matplotlib.pyplot as plt
 from scipy.spatial import cKDTree
 from scipy.interpolate import splprep, splev
@@ -37,8 +38,13 @@ class AgvIrttStarNode(Node):
 
         # Subscriptions
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, 10)
-        # self.create_subscription(PoseWithCovarianceStamped, '/initialpose', self.start_callback, 10)
         self.create_subscription(PoseStamped, '/goal_pose', self.goal_callback, 10)
+        self.create_subscription(Odometry, '/odometry/filtered', self.odom_callback, 10)    
+
+
+        # Biến lưu trữ vị trí robot
+        self.robot_position = None
+        self.robot_orientation = None
 
         self.start = None
         self.goal = None
@@ -55,6 +61,40 @@ class AgvIrttStarNode(Node):
 
         self.get_logger().info("Global planner node started. Waiting for map and goal.")
 
+    def odom_callback(self, msg: Odometry):
+        # Lấy vị trí và orientation từ Odometry message
+        position = msg.pose.pose.position
+        orientation = msg.pose.pose.orientation
+
+        # Chuyển đổi quaternions thành góc Euler nếu cần
+        euler = self.quaternion_to_euler(orientation)
+
+        # Cập nhật vị trí và orientation của robot
+        self.robot_position = np.array([position.x, position.y])
+        self.robot_orientation = euler[2]  # Chỉ lấy yaw (z)
+
+        self.get_logger().info(f"Robot position: {self.robot_position}, Orientation: {self.robot_orientation}")
+
+    def quaternion_to_euler(self, quaternion: Quaternion):
+        x = quaternion.x
+        y = quaternion.y
+        z = quaternion.z
+        w = quaternion.w
+
+        t0 = +2.0 * (w * x + y * z)
+        t1 = +1.0 - 2.0 * (x * x + y * y)
+        roll_x = math.atan2(t0, t1)
+
+        t2 = +2.0 * (w * y - z * x)
+        t2 = +1.0 if t2 > +1.0 else t2
+        t2 = -1.0 if t2 < -1.0 else t2
+        pitch_y = math.asin(t2)
+
+        t3 = +2.0 * (w * z + x * y)
+        t4 = +1.0 - 2.0 * (y * y + z * z)
+        yaw_z = math.atan2(t3, t4)
+
+        return roll_x, pitch_y, yaw_z  # Return (roll, pitch, yaw)
 
     def map_callback(self, msg: OccupancyGrid):
         self.map_res = msg.info.resolution
@@ -83,28 +123,16 @@ class AgvIrttStarNode(Node):
             self.get_logger().info("Map is successfully received and processed.")
 
     def goal_callback(self, msg: PoseStamped):
-        # Khi nhận được goal, lấy vị trí hiện tại của robot làm điểm bắt đầu
         if self.map_data is None:
             self.get_logger().warn("Map not received yet. Cannot plan.")
             return
 
-        try:
-            # Lấy transform từ frame của bản đồ tới frame của robot
-            now = rclpy.time.Time()
-            trans = self.tf_buffer.lookup_transform(
-                self.map_frame_id,
-                'base_footprint', # Frame của robot
-                now)
-            self.start = np.array([trans.transform.translation.x, trans.transform.translation.y])
-            self.get_logger().info(f"Current robot pose set as start: {self.start}")
-        except Exception as e:
-            self.get_logger().error(f"Could not get robot pose from TF: {e}")
-            return
-
         self.goal = np.array([msg.pose.position.x, msg.pose.position.y])
         self.get_logger().info(f"Goal point set at: {self.goal}")
-        # Chạy planner sau khi đã có start và goal
-        self.run_planner()
+        
+        if self.start is not None:
+            self.run_planner()
+
 
     def world_to_map(self, point):
         mx = int((point[0] - self.map_origin.x) / self.map_res)
