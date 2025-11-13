@@ -26,6 +26,7 @@ setup(
     entry_points={
         'console_scripts': [
             'global_planner = agv_planner.global_planner:main',
+            'local_planner = agv_planner.local_planner:main',
         ],
     },
 )

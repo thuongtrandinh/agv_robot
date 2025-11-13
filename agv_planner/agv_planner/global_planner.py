@@ -11,7 +11,6 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 import numpy as np
 import math
-import matplotlib.pyplot as plt
 from scipy.spatial import cKDTree
 from scipy.interpolate import splprep, splev
 from scipy.ndimage import binary_dilation
@@ -30,7 +29,10 @@ class AgvIrttStarNode(Node):
         self.declare_parameter('search_radius', 2.0)
         self.declare_parameter('path_resolution', 0.1)
         self.declare_parameter('enable_smoothing', True)
-        self.declare_parameter('robot_radius', 0.8)
+        self.declare_parameter('robot_radius', 0.6)      # giống footprint radius
+        self.declare_parameter('safety_margin', 0.1)     # giống inflation thêm
+        self.declare_parameter('alpha', 2.0)
+
 
         self.max_iter = self.get_parameter('max_iter').value
         self.step_len = self.get_parameter('step_len').value
@@ -39,7 +41,11 @@ class AgvIrttStarNode(Node):
         self.path_resolution = self.get_parameter('path_resolution').value
         self.enable_smoothing = self.get_parameter('enable_smoothing').value
         self.robot_radius = self.get_parameter('robot_radius').value
+        self.safety_margin = self.get_parameter('safety_margin').value
+        self.alpha = self.get_parameter('alpha').value
 
+        # Wall margin = robot footprint + safety margin (y chang Nav2 inflation)
+        self.wall_margin = self.robot_radius + self.safety_margin
         # =======================
         # Publisher
         # =======================
@@ -76,7 +82,7 @@ class AgvIrttStarNode(Node):
         self.start = None
         self.goal = None
 
-        self.map_data = None
+        self.map_data = None          # binary map đã inflate (Nav2 style)
         self.map_res = None
         self.map_origin = None
         self.map_width = None
@@ -104,11 +110,16 @@ class AgvIrttStarNode(Node):
         data = np.array(msg.data, dtype=np.int8).reshape((self.map_height, self.map_width))
         data = np.flipud(data)
 
+        # Obstacles gốc
         obstacles = (data > 50)
-        inflate_cells = int((self.robot_radius + 0.025) / self.map_res)
+
+        # ✅ Nav2-like: inflation_layer = obstacles nở ra theo wall_margin
+        inflate_cells = max(1, int(self.wall_margin / self.map_res))
+        self.get_logger().info(f"🔧 Inflation: wall_margin={self.wall_margin:.3f} m -> {inflate_cells} cells")
 
         self.map_data = binary_dilation(obstacles, iterations=inflate_cells)
 
+        # Free space points (dùng cho RRT sampling)
         free_ys, free_xs = np.where(~self.map_data)
         self.free_points = np.stack([
             free_xs * self.map_res + self.map_origin.x,
@@ -183,27 +194,38 @@ class AgvIrttStarNode(Node):
         return mx, my
 
     def is_collision(self, p):
+        """
+        Chuẩn Nav2 style:
+        - map_data đã inflate theo robot footprint + safety.
+        - Ở đây chỉ cần check 1 ô (cell) là đủ.
+        """
         mx, my = self.world_to_map(p)
+
         if 0 <= mx < self.map_width and 0 <= my < self.map_height:
-            return self.map_data[my, mx]
-        return True
+            return self.map_data[my, mx]   # True = collision
+        return True                        # ngoài map = tường
 
     def line_of_sight(self, p1, p2):
+        """
+        Giống kiểu planner check costmap:
+        - Sample dọc đoạn thẳng.
+        - Mỗi điểm gọi is_collision().
+        - Phần clearance đã encode trong inflation.
+        """
+
         dist = np.linalg.norm(p1 - p2)
         if dist < 1e-6:
             return not self.is_collision(p1)
 
-        steps = int(dist / (self.map_res * 0.5))
+        steps = max(3, int(dist / (self.map_res * 0.5)))
         t = np.linspace(0, 1, steps)
         pts = p1 + (p2 - p1)[None, :] * t[:, None]
 
-        mx = ((pts[:, 0] - self.map_origin.x) / self.map_res).astype(int)
-        my = (self.map_height - 1 - (pts[:, 1] - self.map_origin.y) / self.map_res).astype(int)
+        for p in pts:
+            if self.is_collision(p):
+                return False
 
-        mx = np.clip(mx, 0, self.map_width - 1)
-        my = np.clip(my, 0, self.map_height - 1)
-
-        return not np.any(self.map_data[my, mx])
+        return True
 
     # ============================================
     # IRRT*
@@ -232,11 +254,11 @@ class AgvIrttStarNode(Node):
 
         best_goal_idx = -1
         best_cost = float("inf")
-
         last_improve = 0
 
         for i in range(self.max_iter):
 
+            # sampling
             if best_cost < float("inf") and np.random.rand() < self.goal_sample_rate:
                 rnd = self.goal
             else:
@@ -245,11 +267,13 @@ class AgvIrttStarNode(Node):
                 else:
                     rnd = self.sample_informed_region(best_cost, c_min)
 
+            # nearest
             pts = np.array([n['point'] for n in nodes])
             kdt = cKDTree(pts)
             _, nearest_idx = kdt.query(rnd)
             nearest = nodes[nearest_idx]
 
+            # steer
             direction = rnd - nearest['point']
             dist = np.linalg.norm(direction)
             if dist < 1e-6:
@@ -257,9 +281,11 @@ class AgvIrttStarNode(Node):
             direction /= dist
             new = nearest['point'] + direction * min(dist, self.step_len)
 
+            # collision check (Nav2 style)
             if self.is_collision(new) or not self.line_of_sight(nearest['point'], new):
                 continue
 
+            # choose parent
             near_idxs = kdt.query_ball_point(new, self.search_radius)
             best_parent = nearest_idx
             best_new_cost = nearest['cost'] + np.linalg.norm(new - nearest['point'])
@@ -274,6 +300,7 @@ class AgvIrttStarNode(Node):
             new_idx = len(nodes)
             nodes.append({'point': new, 'parent': best_parent, 'cost': best_new_cost})
 
+            # rewire
             for ni in near_idxs:
                 n = nodes[ni]
                 c = best_new_cost + np.linalg.norm(new - n['point'])
@@ -281,6 +308,7 @@ class AgvIrttStarNode(Node):
                     n['cost'] = c
                     n['parent'] = new_idx
 
+            # goal check
             if np.linalg.norm(new - self.goal) < self.search_radius:
                 if self.line_of_sight(new, self.goal):
                     total_cost = best_new_cost + np.linalg.norm(new - self.goal)
@@ -309,46 +337,48 @@ class AgvIrttStarNode(Node):
     # ============================================
     def compute_smooth_orientation(self, path):
 
-        if len(path) < 3:
+        N = len(path)
+
+        if N < 4:
             yaws = []
-            for i in range(len(path)-1):
+            for i in range(N - 1):
                 dp = path[i+1] - path[i]
-                yaws.append(np.arctan2(dp[1], dp[0]))
+                yaws.append(math.atan2(dp[1], dp[0]))
             yaws.append(yaws[-1])
             return np.array(yaws)
 
         raw = []
-        for i in range(len(path)-1):
+        for i in range(N - 1):
             dp = path[i+1] - path[i]
-            raw.append(np.arctan2(dp[1], dp[0]))
+            raw.append(math.atan2(dp[1], dp[0]))
         raw.append(raw[-1])
         raw = np.unwrap(raw)
 
-        t = np.linspace(0, 1, len(raw))
+        t = np.linspace(0, 1, N)
+
         try:
             tck = splprep([raw], s=0.4, k=3)[0]
             yaw_smooth = splev(t, tck)[0]
-        except:
+        except Exception:
             yaw_smooth = raw
 
         yaw_smooth[0] = self.start_yaw
         yaw_smooth[-1] = self.goal_yaw
 
-        N = len(yaw_smooth)
-        blend = max(4, N//12)
+        blend = min(max(3, N // 10), N // 2)
 
         for i in range(blend):
-            a = i/blend
-            yaw_smooth[i] = (1-a)*self.start_yaw + a*yaw_smooth[i]
+            a = i / blend
+            yaw_smooth[i] = (1 - a) * self.start_yaw + a * yaw_smooth[i]
 
         for i in range(blend):
-            a = i/blend
-            yaw_smooth[-1-i] = (1-a)*self.goal_yaw + a*yaw_smooth[-1-i]
+            a = i / blend
+            yaw_smooth[-1 - i] = (1 - a) * self.goal_yaw + a * yaw_smooth[-1 - i]
 
         return yaw_smooth
 
     # ============================================
-    # PUBLISH PATH (USING SPLINE ORIENTATION)
+    # PUBLISH PATH
     # ============================================
     def publish_path(self, path_points):
 
@@ -362,12 +392,12 @@ class AgvIrttStarNode(Node):
             pose = PoseStamped()
             pose.header = msg.header
 
-            pose.pose.position.x = path_points[i][0]
-            pose.pose.position.y = path_points[i][1]
+            pose.pose.position.x = float(path_points[i][0])
+            pose.pose.position.y = float(path_points[i][1])
 
-            yaw = yaw_list[i]
-            pose.pose.orientation.z = np.sin(yaw/2)
-            pose.pose.orientation.w = np.cos(yaw/2)
+            yaw = float(yaw_list[i])
+            pose.pose.orientation.z = math.sin(yaw / 2.0)
+            pose.pose.orientation.w = math.cos(yaw / 2.0)
 
             msg.poses.append(pose)
 
@@ -384,6 +414,7 @@ class AgvIrttStarNode(Node):
         if path is None:
             return
 
+        # Không cần filter thêm — mọi node đã collision-free theo costmap
         self.publish_path(path)
 
 
