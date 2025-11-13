@@ -143,8 +143,7 @@ def launch_setup(context, *args, **kwargs):
     # Aruco detector
     aruco_detector = Node(
         package='agv_localization',
-        executable='aruco_detector_sim',
-        name='aruco_detector',
+        executable='aruco_map_localizer',
         parameters=[{'use_sim_time': use_sim_time}],
         output='screen'
     )
@@ -164,6 +163,7 @@ def launch_setup(context, *args, **kwargs):
             ('sync', 'true'),  # Force time synchronization
         ]
     )
+
 
     return [
         # 🔥 CRITICAL ORDER: Gazebo first to be the clock source, then the bridge

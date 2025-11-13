@@ -2,7 +2,7 @@ import os
 from launch import LaunchDescription
 from ament_index_python.packages import get_package_share_directory
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, TimerAction
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
 
@@ -152,12 +152,26 @@ def launch_setup(context, *args, **kwargs):
         ]
         # Default output: /odometry/filtered (no remapping needed)
     )
+    
+    # global_localization = TimerAction(
+    #     period=5.0,
+    #     actions=[
+    #         Node(
+    #             package="agv_localization",
+    #             executable="call_global_localization.py",
+    #             output="screen",
+    #             parameters=[{"use_sim_time": use_sim_time}]
+    #         )
+    #     ]
+    # )
 
     return [
         static_transform,
         nav2_map_server,
         nav2_amcl,
         nav2_lifecycle_manager,
+
+        # global_localization,
         # Sensor Fusion nodes (Standard Pipeline)
         imu_republisher,  # Add covariance to IMU
         odom_republisher, # Add covariance to encoder odom
