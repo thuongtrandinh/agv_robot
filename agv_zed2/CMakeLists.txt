@@ -1,31 +1,38 @@
 cmake_minimum_required(VERSION 3.8)
 project(agv_zed2)
 
+# Compiler flags
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# find dependencies
+# =====================
+# Dependencies
+# =====================
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
-find_package(image_transport REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
-find_package(ament_index_cpp REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 
 include_directories(
   include
   ${OpenCV_INCLUDE_DIRS}
 )
 
-add_executable(mapping src/mapping.cpp)
-ament_target_dependencies(mapping
+# ======================================================
+# Node 1: aruco_detector
+# ======================================================
+add_executable(aruco_detector src/aruco_detector.cpp)
+
+ament_target_dependencies(aruco_detector
   rclcpp
   sensor_msgs
   geometry_msgs
@@ -33,47 +40,102 @@ ament_target_dependencies(mapping
   cv_bridge
   tf2
   tf2_ros
+  tf2_geometry_msgs
+  OpenCV
+)
+
+target_link_libraries(aruco_detector
+  ${OpenCV_LIBRARIES}
+  yaml-cpp
+)
+
+# ======================================================
+# Node 2: aruco_mapper
+# ======================================================
+add_executable(aruco_mapper src/aruco_mapper.cpp)
+
+ament_target_dependencies(aruco_mapper
+  rclcpp
+  geometry_msgs
+  visualization_msgs
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
   yaml-cpp
   ament_index_cpp
 )
 
-target_link_libraries(mapping
-  ${OpenCV_LIBS}
+target_link_libraries(aruco_mapper
   yaml-cpp
 )
 
+# ======================================================
+# Node 3: aruco_localizer
+# ======================================================
+add_executable(aruco_localizer src/aruco_localizer.cpp)
+
+ament_target_dependencies(aruco_localizer
+  rclcpp
+  geometry_msgs
+  visualization_msgs
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+  yaml-cpp
+  ament_index_cpp
+)
+
+target_link_libraries(aruco_localizer
+  yaml-cpp
+)
+
+# ======================================================
+# Node 4: camera_zed2
+# ======================================================
+add_executable(camera_zed2 src/camera_zed2.cpp)
+
+ament_target_dependencies(camera_zed2
+  rclcpp
+  sensor_msgs
+  cv_bridge
+  OpenCV
+)
+
+target_link_libraries(camera_zed2
+  ${OpenCV_LIBRARIES}
+)
+# =====================
+# Install executables
+# =====================
 install(TARGETS
-  mapping
+  aruco_detector
+  aruco_mapper
+  aruco_localizer
+  camera_zed2
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(PROGRAMS
-  scripts/aruco_detector.py
-  scripts/aruco_mapper.py
-  scripts/aruco_localizer.py
-  DESTINATION lib/${PROJECT_NAME}
-)
-
+# =====================
+# Install config files
+# =====================
 install(DIRECTORY 
   config
   DESTINATION share/${PROJECT_NAME}
 )
 
-
+# =====================
+# Tests (optional)
+# =====================
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
-  # the following line skips the linter which checks for copyrights
-  # comment the line when a copyright and license is added to all source files
-  set(ament_cmake_copyright_FOUND TRUE)
-  # the following line skips cpplint (only works in a git repo)
-  # comment the line when this package is in a git repo and when
-  # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
+  set(ament_cmake_copyright_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-# Export dependencies for other packages that might depend on agv_zed2
-# This ensures that if another package links against agv_zed2, it will also find these dependencies.
+# =====================
+# Export dependencies
+# =====================
 ament_export_dependencies(
   rclcpp
   sensor_msgs
@@ -82,6 +144,7 @@ ament_export_dependencies(
   cv_bridge
   tf2
   tf2_ros
+  tf2_geometry_msgs
   yaml-cpp
   OpenCV
   ament_index_cpp
