@@ -124,13 +124,23 @@ def generate_launch_description():
         ]
     )
 
-    mapping_aruco_saver = Node(
-        package="agv_mapping_with_knowns_poses",
-        executable="mapping_aruco",
-        name="mapping_aruco_saver",
+    # ============================
+    #  ArUco Mapper (from agv_zed2)
+    #  Saves discovered markers to agv_mapping_with_knowns_poses/maps
+    # ============================
+    aruco_mapper = Node(
+        package="agv_zed2",
+        executable="aruco_mapper",
+        name="aruco_mapper",
         output="screen",
         parameters=[
             {"use_sim_time": use_sim_time},
+            {"map_frame": "map"},
+            {"camera_frame_id": "zed2_left_camera_frame"},
+            {"marker_topic": "aruco/markers"},
+            {"marker_size": 0.173},
+            {"max_marker_distance": 3.0},
+            {"max_jump_distance": 0.30},
         ],
     )
 
@@ -156,6 +166,6 @@ def generate_launch_description():
         # SLAM nodes
         nav2_map_saver,
         slam_toolbox,
-        mapping_aruco_saver,
+        aruco_mapper,
         nav2_lifecycle_manager,
     ])

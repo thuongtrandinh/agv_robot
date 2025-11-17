@@ -3,12 +3,16 @@ import os
 import xacro
 
 from launch import LaunchDescription
-from launch.actions import OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 
 def launch_setup(context, *args, **kwargs):
+
+    # read Launch args early (used to decide whether to spawn controller / static TF)
+    spawn_diff = context.launch_configurations.get('spawn_diff_controller', 'true').lower() in ['1','true','yes']
+    publish_static = context.launch_configurations.get('publish_static_odom', 'true').lower() in ['1','true','yes']
 
     # ============================
     #  PATHS (relative in package)
@@ -68,18 +72,29 @@ def launch_setup(context, *args, **kwargs):
         output='screen'
     )
 
-    # ============================
-    #  4) Spawner — Diff Drive Controller
-    # ============================
-    spawner_diff = Node(
-        package='controller_manager',
-        executable='spawner',
-        arguments=['diff_cont'],
-        output='screen'
-    )
+    # Conditionally spawn diff controller
+    spawner_diff = None
+    if spawn_diff:
+        spawner_diff = Node(
+            package='controller_manager',
+            executable='spawner',
+            arguments=['diff_cont'],
+            output='screen'
+        )
+
+    # Optional static odom->base for standalone runs
+    static_odom_tf = None
+    if publish_static:
+        static_odom_tf = Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='static_odom_to_base',
+            arguments=['0','0','0','0','0','0','odom','base_footprint'],
+            output='screen'
+        )
 
     # ============================
-    #  5) ZED2 → ArUco Detector
+    #  ZED2 ArUco + LIDAR + RViz
     # ============================
     aruco_detector = Node(
         package='agv_zed2',
@@ -95,9 +110,6 @@ def launch_setup(context, *args, **kwargs):
         ]
     )
 
-    # ============================
-    #  6) RPLIDAR
-    # ============================
     lidar_node = Node(
         package='rplidar_ros',
         executable='rplidar_composition',
@@ -110,9 +122,6 @@ def launch_setup(context, *args, **kwargs):
         output='screen'
     )
 
-    # ============================
-    #  7) RViz2
-    # ============================
     rviz2 = Node(
         package='rviz2',
         executable='rviz2',
@@ -121,18 +130,28 @@ def launch_setup(context, *args, **kwargs):
         output='screen'
     )
 
-    return [
+    # build return list conditionally
+    nodes = [
         robot_state_pub,
         controller_manager,
         spawner_jsb,
-        spawner_diff,
-        lidar_node,
-        aruco_detector,
-        rviz2,
     ]
+    if spawner_diff:
+        nodes.append(spawner_diff)
+    if static_odom_tf:
+        nodes.insert(1, static_odom_tf)
+
+    # sensors / visualisation
+    nodes += [aruco_detector, lidar_node, rviz2]
+
+    return nodes
 
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument('spawn_diff_controller', default_value='true',
+                               description='Spawn diff controller (set false to avoid publishing odom)'),
+        DeclareLaunchArgument('publish_static_odom', default_value='true',
+                               description='Publish static odom->base_footprint for standalone runs'),
         OpaqueFunction(function=launch_setup)
     ])

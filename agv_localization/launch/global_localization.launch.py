@@ -153,17 +153,26 @@ def launch_setup(context, *args, **kwargs):
         # Default output: /odometry/filtered (no remapping needed)
     )
     
-    # global_localization = TimerAction(
-    #     period=5.0,
-    #     actions=[
-    #         Node(
-    #             package="agv_localization",
-    #             executable="call_global_localization.py",
-    #             output="screen",
-    #             parameters=[{"use_sim_time": use_sim_time}]
-    #         )
-    #     ]
-    # )
+    # ============================
+    #  ArUco Localizer (from agv_zed2)
+    #  Publishes /aruco/pose_with_covariance in 'map' frame
+    # ============================
+    aruco_localizer = Node(
+        package="agv_zed2",
+        executable="aruco_localizer",
+        name="aruco_localizer",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"map_frame": "map"},
+            {"camera_frame_id": "zed2_left_camera_frame"},
+            {"marker_topic": "aruco/markers"},
+            {"marker_map_file": "aruco_map_positions.yaml"},
+            {"position_variance": 0.0001},
+            {"orientation_variance": 0.001},
+            {"distance_scaling": 0.00005},
+        ],
+    )
 
     return [
         static_transform,
@@ -176,6 +185,9 @@ def launch_setup(context, *args, **kwargs):
         imu_republisher,  # Add covariance to IMU
         odom_republisher, # Add covariance to encoder odom
         ekf_filter,       # EKF: Fuse IMU + Encoder → /odometry/filtered
+
+        # ArUco localization
+        aruco_localizer,
     ]
 
 
