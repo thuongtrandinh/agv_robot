@@ -267,13 +267,13 @@ def generate_launch_description():
 
     x_pos_arg = DeclareLaunchArgument(
         'x_pos',
-        default_value='5.0',
+        default_value='0.0',
         description='Initial X position of robot in simulation'
     )
 
     y_pos_arg = DeclareLaunchArgument(
         'y_pos',
-        default_value='-2.0',
+        default_value='0.0',
         description='Initial Y position of robot in simulation'
     )
 

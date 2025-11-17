@@ -14,6 +14,7 @@ find_package(rclcpp_action REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
@@ -31,6 +32,17 @@ add_executable(twist_relay src/twist_relay.cpp)
 ament_target_dependencies(twist_relay rclcpp geometry_msgs)
 
 
+add_executable(motor_odom src/motor_odom.cpp)
+ament_target_dependencies(motor_odom
+  rclcpp
+  std_msgs
+  sensor_msgs
+  nav_msgs
+  tf2_ros
+  tf2
+  geometry_msgs
+)
+
 # Includes
 include_directories(
   include
@@ -44,7 +56,7 @@ install(DIRECTORY urdf launch xacro config include rviz worlds photos models
 )
 
 # Install executables
-install(TARGETS simple_controller twist_relay
+install(TARGETS simple_controller motor_odom
   DESTINATION lib/${PROJECT_NAME})
 
 # Install Python scripts

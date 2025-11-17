@@ -130,6 +130,29 @@ def launch_setup(context, *args, **kwargs):
         output='screen'
     )
 
+    # ============================
+    #  motor_odom: publish /odom from /motor_feedback + /imu
+    # ============================
+    motor_odom = Node(
+        package='mobile_robot',
+        executable='motor_odom',
+        name='motor_odom',
+        output='screen',
+        parameters=[
+            {'wheel_radius': 0.05},
+            {'wheel_separation': 0.46},
+            # motor_feedback format: [right, left]
+            {'left_index': 1},
+            {'right_index': 0},
+            {'feedback_is_linear_velocity': True},
+            {'imu_topic': '/imu'},
+            {'motor_topic': '/motor_feedback'},
+            {'odom_topic': '/diff_cont/odom'},   # changed for synchronization with odom_republisher / EKF pipeline
+            {'odom_frame': 'odom'},
+            {'base_frame': 'base_footprint'},
+        ]
+    )
+
     # build return list conditionally
     nodes = [
         robot_state_pub,
@@ -142,7 +165,7 @@ def launch_setup(context, *args, **kwargs):
         nodes.insert(1, static_odom_tf)
 
     # sensors / visualisation
-    nodes += [aruco_detector, lidar_node, rviz2]
+    nodes += [aruco_detector, lidar_node, motor_odom, rviz2]
 
     return nodes
 
@@ -151,7 +174,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('spawn_diff_controller', default_value='true',
                                description='Spawn diff controller (set false to avoid publishing odom)'),
-        DeclareLaunchArgument('publish_static_odom', default_value='true',
+        DeclareLaunchArgument('publish_static_odom', default_value='false',
                                description='Publish static odom->base_footprint for standalone runs'),
         OpaqueFunction(function=launch_setup)
     ])
