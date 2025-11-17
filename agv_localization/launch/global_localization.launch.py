@@ -122,20 +122,13 @@ def launch_setup(context, *args, **kwargs):
     # TUNED for LOCALIZATION with EKF: Match actual encoder accuracy
     # Lower values = trust encoder more, higher values = trust less
     odom_republisher = Node(
-        package="agv_localization",
-        executable="odom_republisher",
-        name="odom_republisher",
-        output="screen",
+        package='agv_localization',
+        executable='odom_republisher',
+        name='odom_republisher',
+        output='screen',
         parameters=[
-            {"use_sim_time": use_sim_time},
-            {"input_topic": "/diff_cont/odom"},
-            {"output_topic": "/diff_cont/odom_with_covariance"},
-            {"pose_x_covariance": 0.001},               # Not used by EKF (velocity-only)
-            {"pose_y_covariance": 0.001},               # Not used by EKF (velocity-only)
-            {"pose_yaw_covariance": 0.01},              # Not used by EKF (velocity-only)
-            {"twist_vx_covariance": 0.002},             # CRITICAL: Trust encoder vx
-            {"twist_vy_covariance": 0.002},             # CRITICAL: Trust encoder vy (should be ~0)
-            {"twist_vyaw_covariance": 0.01}             # CRITICAL: Trust encoder vyaw
+            {'input_odom_topic': '/diff_cont/odom'},  # motor_odom source
+            {'output_odom_topic': '/diff_cont/odom_with_covariance'},
         ]
     )
     

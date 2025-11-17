@@ -27,12 +27,10 @@ diff_cont:
     wheel_radius: 0.05
 
     # Odometry + TF
+    # Disable all odom publishing (motor_odom will provide it)
     publish_odom: false
-    # Some controller variants use publish_odometry
     publish_odometry: false
-    odom_frame_id: "odom"
-    base_frame_id: "base_footprint"
-    enable_odom_tf: false   # ensure TF broadcast disabled
+    enable_odom_tf: false
 
     # Input/output
     cmd_vel_timeout: 0.5

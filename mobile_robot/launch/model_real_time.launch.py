@@ -11,8 +11,9 @@ from ament_index_python.packages import get_package_share_directory
 def launch_setup(context, *args, **kwargs):
 
     # read Launch args early (used to decide whether to spawn controller / static TF)
-    spawn_diff = context.launch_configurations.get('spawn_diff_controller', 'true').lower() in ['1','true','yes']
-    publish_static = context.launch_configurations.get('publish_static_odom', 'true').lower() in ['1','true','yes']
+    # CHANGED: spawn_diff_controller default=false (motor_odom will provide /diff_cont/odom)
+    spawn_diff = context.launch_configurations.get('spawn_diff_controller', 'false').lower() in ['1','true','yes']
+    publish_static = context.launch_configurations.get('publish_static_odom', 'false').lower() in ['1','true','yes']
 
     # ============================
     #  PATHS (relative in package)
@@ -72,7 +73,10 @@ def launch_setup(context, *args, **kwargs):
         output='screen'
     )
 
-    # Conditionally spawn diff controller
+    # ============================
+    #  3b) Optionally spawn diff controller (default: false)
+    #     motor_odom will provide /diff_cont/odom by default
+    # ============================
     spawner_diff = None
     if spawn_diff:
         spawner_diff = Node(
@@ -82,7 +86,9 @@ def launch_setup(context, *args, **kwargs):
             output='screen'
         )
 
-    # Optional static odom->base for standalone runs
+    # ============================
+    #  1c) Optional static odom->base for standalone runs (default: false)
+    # ============================
     static_odom_tf = None
     if publish_static:
         static_odom_tf = Node(
@@ -94,7 +100,7 @@ def launch_setup(context, *args, **kwargs):
         )
 
     # ============================
-    #  ZED2 ArUco + LIDAR + RViz
+    #  ArUco Detector
     # ============================
     aruco_detector = Node(
         package='agv_zed2',
@@ -110,6 +116,31 @@ def launch_setup(context, *args, **kwargs):
         ]
     )
 
+    # ============================
+    #  motor_odom: publishes /diff_cont/odom from /motor_feedback + /imu
+    # ============================
+    motor_odom = Node(
+        package='mobile_robot',
+        executable='motor_odom',
+        name='motor_odom',
+        output='screen',
+        parameters=[
+            {'wheel_radius': 0.05},
+            {'wheel_separation': 0.46},
+            {'left_index': 1},
+            {'right_index': 0},
+            {'feedback_is_linear_velocity': True},
+            {'imu_topic': '/imu'},
+            {'motor_topic': '/motor_feedback'},
+            {'odom_topic': '/diff_cont/odom'},   # motor_odom is canonical odom source
+            {'odom_frame': 'odom'},
+            {'base_frame': 'base_footprint'},
+        ]
+    )
+
+    # ============================
+    #  LIDAR
+    # ============================
     lidar_node = Node(
         package='rplidar_ros',
         executable='rplidar_composition',
@@ -122,35 +153,15 @@ def launch_setup(context, *args, **kwargs):
         output='screen'
     )
 
+    # ============================
+    #  RViz
+    # ============================
     rviz2 = Node(
         package='rviz2',
         executable='rviz2',
         arguments=['-d', rviz_file],
         parameters=[{'use_sim_time': False}],
         output='screen'
-    )
-
-    # ============================
-    #  motor_odom: publish /odom from /motor_feedback + /imu
-    # ============================
-    motor_odom = Node(
-        package='mobile_robot',
-        executable='motor_odom',
-        name='motor_odom',
-        output='screen',
-        parameters=[
-            {'wheel_radius': 0.05},
-            {'wheel_separation': 0.46},
-            # motor_feedback format: [right, left]
-            {'left_index': 1},
-            {'right_index': 0},
-            {'feedback_is_linear_velocity': True},
-            {'imu_topic': '/imu'},
-            {'motor_topic': '/motor_feedback'},
-            {'odom_topic': '/diff_cont/odom'},   # changed for synchronization with odom_republisher / EKF pipeline
-            {'odom_frame': 'odom'},
-            {'base_frame': 'base_footprint'},
-        ]
     )
 
     # build return list conditionally
@@ -172,9 +183,9 @@ def launch_setup(context, *args, **kwargs):
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('spawn_diff_controller', default_value='true',
-                               description='Spawn diff controller (set false to avoid publishing odom)'),
+        DeclareLaunchArgument('spawn_diff_controller', default_value='false',
+                               description='Spawn diff controller (default false; motor_odom provides odom)'),
         DeclareLaunchArgument('publish_static_odom', default_value='false',
-                               description='Publish static odom->base_footprint for standalone runs'),
+                               description='Publish static odom->base_footprint (default false)'),
         OpaqueFunction(function=launch_setup)
     ])
