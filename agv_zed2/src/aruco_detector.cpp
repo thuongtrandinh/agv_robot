@@ -23,7 +23,7 @@ public:
         calib_pkg_  = declare_parameter("calib_pkg", "agv_zed2");
         calib_file_ = declare_parameter("calib_file", "zed2_calibration_vga.yaml");
         marker_size_ = declare_parameter("marker_size", 0.18);
-        device_ = declare_parameter("device", "/dev/video4");
+        device_ = declare_parameter("device", "/dev/video0");
         frame_id_ = declare_parameter("camera_frame", "zed2_left_camera_frame");
 
         loadCalibration();
@@ -80,14 +80,8 @@ private:
         cv::Mat gray;
         cv::cvtColor(img, gray, cv::COLOR_BGR2GRAY);
 
-        // Giảm kích thước ảnh (50%)
-        cv::Mat small;
-        cv::resize(gray, small, cv::Size(), 0.5, 0.5);
-
-        // Xử lý song song, không block timer
-        std::async(std::launch::async, [this, small]() {
-            detectAruco(small);
-        });
+        // Nếu ảnh đã nhỏ, không cần resize
+        detectAruco(gray);
     }
 
     void detectAruco(const cv::Mat &img) {
