@@ -176,7 +176,7 @@ def generate_launch_description():
                     {"use_sim_time": use_sim_time},
                     {"initial_pose_x": 0.0},
                     {"initial_pose_y": 0.0},
-                    {"initial_pose_a": 0.0},
+                    {"initial_pose_a": 3.14159},  # Set RPY yaw to Pi
                 ]
             )
         ]
