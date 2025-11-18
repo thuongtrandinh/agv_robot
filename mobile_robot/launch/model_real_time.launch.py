@@ -15,7 +15,7 @@ def launch_setup(context, *args, **kwargs):
     # CHANGED: spawn_diff_controller default=false (motor_odom will provide /diff_cont/odom)
     spawn_diff = context.launch_configurations.get('spawn_diff_controller', 'false').lower() in ['1','true','yes']
     publish_static = context.launch_configurations.get('publish_static_odom', 'true').lower() in ['1','true','yes']
-    use_robot_state_pub = context.launch_configurations.get('use_robot_state_publisher', 'false').lower() in ['1','true','yes']
+    use_robot_state_pub = context.launch_configurations.get('use_robot_state_publisher', 'true').lower() in ['1','true','yes']
     camera_dev = context.launch_configurations.get('camera_device', '/dev/video0')
 
     # ============================
@@ -159,15 +159,18 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # ============================
-    #  RViz
+    #  RViz (optional)
     # ============================
-    rviz2 = Node(
-        package='rviz2',
-        executable='rviz2',
-        arguments=['-d', rviz_file],
-        parameters=[{'use_sim_time': False}],
-        output='screen'
-    )
+    rviz2 = None
+    run_rviz = context.launch_configurations.get('run_rviz', 'false').lower() in ['1','true','yes']
+    if run_rviz:
+        rviz2 = Node(
+            package='rviz2',
+            executable='rviz2',
+            arguments=['-d', rviz_file],
+            parameters=[{'use_sim_time': False}],
+            output='screen'
+        )
 
     # build return list conditionally
     nodes = [
@@ -183,7 +186,11 @@ def launch_setup(context, *args, **kwargs):
         nodes.insert(1, static_odom_tf)
 
     # sensors / visualisation
-    nodes += [aruco_detector, lidar_node, motor_odom, rviz2]
+    # append rviz2 only if created
+    sensors_nodes = [aruco_detector, lidar_node, motor_odom]
+    if rviz2:
+        sensors_nodes.append(rviz2)
+    nodes += sensors_nodes
 
     return nodes
 
@@ -196,7 +203,9 @@ def generate_launch_description():
                                description='Spawn diff controller (default false; motor_odom provides odom)'),
         DeclareLaunchArgument('publish_static_odom', default_value='true',
                                description='Publish static odom->base_footprint (default true)'),
-        DeclareLaunchArgument('use_robot_state_publisher', default_value='false',
+        DeclareLaunchArgument('use_robot_state_publisher', default_value='true',
                                description='Start robot_state_publisher from this launch (default false; set true if no external rsp present)'),
+        DeclareLaunchArgument('run_rviz', default_value='false',
+                               description='Launch RViz2 (default false). Set true to run RViz from this launch.'),
         OpaqueFunction(function=launch_setup)
     ])
