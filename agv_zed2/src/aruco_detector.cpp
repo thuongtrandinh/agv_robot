@@ -89,9 +89,18 @@ private:
         std::vector<cv::Vec3d> rvecs, tvecs;
         cv::aruco::estimatePoseSingleMarkers(corners, marker_size_, K_, D_, rvecs, tvecs);
 
-        std_msgs::msg::Float32MultiArray detections_msg;
-        // Each detection: [id, px, py, pz, qx, qy, qz, qw]
+        std::map<int, size_t> id_to_best_idx;
+        // Chọn detection gần camera nhất cho mỗi id
         for (size_t i = 0; i < ids.size(); i++) {
+            double dist = cv::norm(tvecs[i]);
+            if (id_to_best_idx.count(ids[i]) == 0 || dist < cv::norm(tvecs[id_to_best_idx[ids[i]]])) {
+                id_to_best_idx[ids[i]] = i;
+            }
+        }
+
+        std_msgs::msg::Float32MultiArray detections_msg;
+        for (const auto& kv : id_to_best_idx) {
+            size_t i = kv.second;
             cv::Mat R_cv;
             cv::Rodrigues(rvecs[i], R_cv);
 
