@@ -2,13 +2,15 @@
 // aruco_detector.cpp  (Native VGA 672×376, /dev/video4, 30 FPS)
 // ============================================================================
 #include <rclcpp/rclcpp.hpp>
-#include <std_msgs/msg/float32_multi_array.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
+#include <visualization_msgs/msg/marker.hpp>
 #include <opencv2/opencv.hpp>
 #include <opencv2/aruco.hpp>
 #include <yaml-cpp/yaml.h>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
+#include <std_msgs/msg/float32_multi_array.hpp>
 
 using namespace std::chrono_literals;
 
@@ -39,7 +41,7 @@ public:
 
         RCLCPP_INFO(get_logger(), "📸 Camera %s opened (672×376 @ 30FPS)", device_.c_str());
 
-        pub_det_ = create_publisher<std_msgs::msg::Float32MultiArray>("/aruco/detections", 10);
+        pub_detections_ = create_publisher<std_msgs::msg::Float32MultiArray>("/aruco/detections", 10);
 
         timer_ = create_wall_timer(
             33ms,
@@ -87,8 +89,8 @@ private:
         std::vector<cv::Vec3d> rvecs, tvecs;
         cv::aruco::estimatePoseSingleMarkers(corners, marker_size_, K_, D_, rvecs, tvecs);
 
-        std_msgs::msg::Float32MultiArray msg;
-
+        std_msgs::msg::Float32MultiArray detections_msg;
+        // Each detection: [id, px, py, pz, qx, qy, qz, qw]
         for (size_t i = 0; i < ids.size(); i++) {
             cv::Mat R_cv;
             cv::Rodrigues(rvecs[i], R_cv);
@@ -110,17 +112,17 @@ private:
             tf2::Quaternion q;
             m.getRotation(q);
 
-            msg.data.push_back(ids[i]);
-            msg.data.push_back(t_ros.at<double>(0));
-            msg.data.push_back(t_ros.at<double>(1));
-            msg.data.push_back(t_ros.at<double>(2));
-            msg.data.push_back(q.x());
-            msg.data.push_back(q.y());
-            msg.data.push_back(q.z());
-            msg.data.push_back(q.w());
+            detections_msg.data.push_back(static_cast<float>(ids[i]));
+            detections_msg.data.push_back(static_cast<float>(t_ros.at<double>(0)));
+            detections_msg.data.push_back(static_cast<float>(t_ros.at<double>(1)));
+            detections_msg.data.push_back(static_cast<float>(t_ros.at<double>(2)));
+            detections_msg.data.push_back(static_cast<float>(q.x()));
+            detections_msg.data.push_back(static_cast<float>(q.y()));
+            detections_msg.data.push_back(static_cast<float>(q.z()));
+            detections_msg.data.push_back(static_cast<float>(q.w()));
         }
 
-        pub_det_->publish(msg);
+        pub_detections_->publish(detections_msg);
     }
 
 private:
@@ -132,7 +134,7 @@ private:
     double marker_size_;
 
     rclcpp::TimerBase::SharedPtr timer_;
-    rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr pub_det_;
+    rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr pub_detections_;
 };
 
 int main(int argc, char **argv) {

@@ -10,6 +10,7 @@
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Transform.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <std_msgs/msg/float32_multi_array.hpp>
 
 #include <yaml-cpp/yaml.h>
 #include <ament_index_cpp/get_package_share_directory.hpp>
@@ -46,9 +47,11 @@ public:
     loadMarkerConfig(marker_map_path_);
 
     auto qos = rclcpp::SensorDataQoS();
-    marker_sub_ = this->create_subscription<visualization_msgs::msg::MarkerArray>(
-      marker_topic_, qos,
-      std::bind(&ArucoLocalizerNode::markerCallback, this, std::placeholders::_1));
+
+    // Only subscribe to /aruco/detections (Float32MultiArray)
+    detections_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
+      "/aruco/detections", qos,
+      std::bind(&ArucoLocalizerNode::detectionsCallback, this, std::placeholders::_1));
 
     pub_pose_cov_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
       "/aruco/pose_with_covariance", 10);
@@ -153,6 +156,43 @@ private:
     }
   }
 
+  // Convert legacy Float32MultiArray detections to MarkerArray and reuse markerCallback
+  void detectionsCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
+  {
+    const auto &d = msg->data;
+    if (d.empty()) return;
+
+    visualization_msgs::msg::MarkerArray markers_msg;
+    rclcpp::Time now = this->now();
+
+    // Expect blocks of 8: [id, px, py, pz, qx, qy, qz, qw]
+    if (d.size() % 8 != 0) {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                           "Legacy detections size (%zu) not multiple of 8", d.size());
+    }
+
+    for (size_t i = 0; i + 7 < d.size(); i += 8) {
+      visualization_msgs::msg::Marker m;
+      m.header.stamp = now;
+      m.header.frame_id = camera_frame_id_;
+      m.ns = "aruco";
+      m.id = static_cast<int>(d[i]);
+
+      m.pose.position.x = d[i+1];
+      m.pose.position.y = d[i+2];
+      m.pose.position.z = d[i+3];
+      m.pose.orientation.x = d[i+4];
+      m.pose.orientation.y = d[i+5];
+      m.pose.orientation.z = d[i+6];
+      m.pose.orientation.w = d[i+7];
+
+      markers_msg.markers.push_back(m);
+    }
+
+    auto shared = std::make_shared<visualization_msgs::msg::MarkerArray>(markers_msg);
+    markerCallback(shared);
+  }
+
   // Members
   std::string map_frame_id_;
   std::string camera_frame_id_;
@@ -166,7 +206,8 @@ private:
 
   std::map<int, MarkerInfo> markers_;
 
-  rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr marker_sub_;
+  // rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr marker_sub_; // removed
+  rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr detections_sub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pub_pose_cov_;
 };
 

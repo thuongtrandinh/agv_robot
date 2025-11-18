@@ -6,6 +6,7 @@
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <std_msgs/msg/float32_multi_array.hpp>
 
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
@@ -48,9 +49,11 @@ public:
 
     // Subscribe MarkerArray
     auto qos = rclcpp::SensorDataQoS();
-    marker_sub_ = this->create_subscription<visualization_msgs::msg::MarkerArray>(
-      marker_topic_, qos,
-      std::bind(&ArucoMapperNode::markerCallback, this, std::placeholders::_1));
+
+    // Only subscribe to /aruco/detections (Float32MultiArray)
+    detections_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
+      "/aruco/detections", qos,
+      std::bind(&ArucoMapperNode::detectionsCallback, this, std::placeholders::_1));
 
     pub_markers_ = create_publisher<visualization_msgs::msg::MarkerArray>("/aruco/markers", 10);
 
@@ -194,6 +197,48 @@ private:
     pub_markers_->publish(markers_msg);
   }
 
+  // ==== Convert legacy Float32MultiArray detections to MarkerArray ====
+  void detectionsCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
+  {
+    const auto &d = msg->data;
+    if (d.empty()) return;
+
+    visualization_msgs::msg::MarkerArray markers_msg;
+    rclcpp::Time now = this->now();
+
+    // Expect blocks of 8: [id, px, py, pz, qx, qy, qz, qw]
+    if (d.size() % 8 != 0) {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                           "Legacy detections size (%zu) not multiple of 8", d.size());
+    }
+
+    for (size_t i = 0; i + 7 < d.size(); i += 8) {
+      visualization_msgs::msg::Marker m;
+      m.header.stamp = now;
+      m.header.frame_id = camera_frame_id_;
+      m.ns = "aruco";
+      m.id = static_cast<int>(d[i]);
+
+      m.pose.position.x = d[i+1];
+      m.pose.position.y = d[i+2];
+      m.pose.position.z = d[i+3];
+      m.pose.orientation.x = d[i+4];
+      m.pose.orientation.y = d[i+5];
+      m.pose.orientation.z = d[i+6];
+      m.pose.orientation.w = d[i+7];
+
+      m.scale.x = marker_size_;
+      m.scale.y = marker_size_;
+      m.scale.z = 0.01;
+
+      markers_msg.markers.push_back(m);
+    }
+
+    // Forward to the same processing flow
+    auto shared = std::make_shared<visualization_msgs::msg::MarkerArray>(markers_msg);
+    markerCallback(shared);
+  }
+
   // ==== Save marker to YAML (RPY version) ====
   void saveMarkerToYAML(int id, const geometry_msgs::msg::Pose &pose)
   {
@@ -225,17 +270,26 @@ private:
 
     root["markers"][id] = marker;
 
-    std::ofstream fout(save_path_);
-    fout << root;
-    fout.close();
+    // Log before saving
+    RCLCPP_INFO(this->get_logger(), "💾 Saving marker %d to %s", id, save_path_.c_str());
 
-    saved_marker_ids_.insert(id);
-
-    RCLCPP_INFO(this->get_logger(),
-                "💾 Saved marker %d at (%.2f, %.2f, %.2f), yaw=%.2f deg",
-                id,
-                pose.position.x, pose.position.y, pose.position.z,
-                yaw * 180.0 / M_PI);
+    try {
+      std::ofstream fout(save_path_);
+      if (!fout.good()) {
+        RCLCPP_ERROR(this->get_logger(), "❌ Failed to open YAML file for writing: %s", save_path_.c_str());
+      } else {
+        fout << root;
+        fout.close();
+        saved_marker_ids_.insert(id);
+        RCLCPP_INFO(this->get_logger(),
+                    "✅ Marker %d saved at (%.2f, %.2f, %.2f), yaw=%.2f deg",
+                    id,
+                    pose.position.x, pose.position.y, pose.position.z,
+                    yaw * 180.0 / M_PI);
+      }
+    } catch (const std::exception &e) {
+      RCLCPP_ERROR(this->get_logger(), "❌ Exception while writing YAML: %s", e.what());
+    }
   }
 
   // ==== Members ====
@@ -253,7 +307,8 @@ private:
   std::set<int> saved_marker_ids_;
   std::map<int, geometry_msgs::msg::Pose> last_marker_poses_;
 
-  rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr marker_sub_;
+  // rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr marker_sub_; // removed
+  rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr detections_sub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_markers_;
 
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
