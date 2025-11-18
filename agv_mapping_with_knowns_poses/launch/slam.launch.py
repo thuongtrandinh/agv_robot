@@ -18,7 +18,8 @@ def generate_launch_description():
 
     use_sim_time_arg = DeclareLaunchArgument(
         "use_sim_time",
-        default_value="true"
+        default_value="true",
+        description="Use simulation time if true"
     )
 
     slam_config_arg = DeclareLaunchArgument(
@@ -183,6 +184,8 @@ def generate_launch_description():
 
     # Ensure EKF and SLAM Toolbox are initialized first
     nodes = [
+        use_sim_time_arg,
+        slam_config_arg,
         imu_republisher,
         odom_republisher,
         ekf_filter,
