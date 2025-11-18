@@ -1,5 +1,5 @@
 #include <rclcpp/rclcpp.hpp>
-#include <std_msgs/msg/float64_multi_array.hpp>
+#include <std_msgs/msg/float32_multi_array.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <tf2/LinearMath/Quaternion.h>
@@ -41,7 +41,7 @@ public:
     imu_sub_ = create_subscription<sensor_msgs::msg::Imu>(
       imu_topic, 10, std::bind(&MotorOdomNode::imuCallback, this, _1));
 
-    motor_sub_ = create_subscription<std_msgs::msg::Float64MultiArray>(
+    motor_sub_ = create_subscription<std_msgs::msg::Float32MultiArray>(
       motor_topic, 10, std::bind(&MotorOdomNode::motorCallback, this, _1));
 
     odom_pub_ = create_publisher<nav_msgs::msg::Odometry>(odom_topic, 10);
@@ -59,7 +59,7 @@ private:
     last_imu_q_ = msg->orientation;
   }
 
-  void motorCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg) {
+  void motorCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg) {
     if (msg->data.size() <= std::max(left_idx_, right_idx_)) {
       RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
                           "motor_feedback size %zu too small", msg->data.size());
@@ -170,7 +170,7 @@ private:
   std::string odom_frame_{"odom"};
   std::string base_frame_{"base_footprint"};
 
-  rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr motor_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr motor_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;

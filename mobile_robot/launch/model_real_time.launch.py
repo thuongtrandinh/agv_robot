@@ -6,6 +6,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
+from launch.substitutions import LaunchConfiguration
 
 
 def launch_setup(context, *args, **kwargs):
@@ -14,8 +15,8 @@ def launch_setup(context, *args, **kwargs):
     # CHANGED: spawn_diff_controller default=false (motor_odom will provide /diff_cont/odom)
     spawn_diff = context.launch_configurations.get('spawn_diff_controller', 'false').lower() in ['1','true','yes']
     publish_static = context.launch_configurations.get('publish_static_odom', 'true').lower() in ['1','true','yes']
-    # new: allow disabling robot_state_publisher when an external node (e.g. micro-ROS) already provides it
     use_robot_state_pub = context.launch_configurations.get('use_robot_state_publisher', 'false').lower() in ['1','true','yes']
+    camera_dev = context.launch_configurations.get('camera_device', '/dev/video0')
 
     # ============================
     #  PATHS (relative in package)
@@ -112,7 +113,7 @@ def launch_setup(context, *args, **kwargs):
         name='aruco_detector',
         output='screen',
         parameters=[
-            {'device': '/dev/video4'},
+            {'device': camera_dev},
             {'camera_frame': 'zed2_left_camera_frame'},
             {'calib_pkg': 'agv_zed2'},
             {'calib_file': 'zed2_calibration_vga.yaml'},
@@ -189,6 +190,8 @@ def launch_setup(context, *args, **kwargs):
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument('camera_device', default_value='/dev/video0',
+                               description='Video device for ArUco camera (e.g. /dev/video0 or /dev/video1)'),
         DeclareLaunchArgument('spawn_diff_controller', default_value='false',
                                description='Spawn diff controller (default false; motor_odom provides odom)'),
         DeclareLaunchArgument('publish_static_odom', default_value='true',
