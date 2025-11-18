@@ -4,6 +4,7 @@
 #include <rclcpp/qos.hpp>
 
 #include <visualization_msgs/msg/marker_array.hpp>
+#include <visualization_msgs/msg/marker.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 
 #include <tf2/LinearMath/Quaternion.h>
@@ -31,7 +32,7 @@ public:
     map_frame_id_    = this->declare_parameter<std::string>("map_frame", "map");
     camera_frame_id_ = this->declare_parameter<std::string>("camera_frame_id", "zed2_left_camera_frame");
     marker_topic_    = this->declare_parameter<std::string>("marker_topic", "aruco/markers");
-    marker_size_     = this->declare_parameter<double>("marker_size", 0.173);
+    marker_size_     = this->declare_parameter<double>("marker_size", 0.18);
 
     max_marker_distance_ = this->declare_parameter<double>("max_marker_distance", 3.0);
     max_jump_distance_   = this->declare_parameter<double>("max_jump_distance", 0.30);
@@ -50,6 +51,8 @@ public:
     marker_sub_ = this->create_subscription<visualization_msgs::msg::MarkerArray>(
       marker_topic_, qos,
       std::bind(&ArucoMapperNode::markerCallback, this, std::placeholders::_1));
+
+    pub_markers_ = create_publisher<visualization_msgs::msg::MarkerArray>("/aruco/markers", 10);
 
     loadExistingMarkers();
 
@@ -160,6 +163,35 @@ private:
       last_marker_poses_[id] = pose_map;
       saveMarkerToYAML(id, pose_map);
     }
+
+    publishMarkers(msg);
+  }
+
+  void publishMarkers(const visualization_msgs::msg::MarkerArray::SharedPtr msg)
+  {
+    visualization_msgs::msg::MarkerArray markers_msg;
+    rclcpp::Time now = this->now();
+
+    for (size_t i = 0; i < msg->markers.size(); i++) {
+      const auto &marker = msg->markers[i];
+
+      visualization_msgs::msg::Marker m;
+      m.header.stamp = now;
+      m.header.frame_id = marker.header.frame_id.empty() ? camera_frame_id_ : marker.header.frame_id;
+      m.ns = "aruco";
+      m.id = marker.id;
+
+      m.pose = marker.pose;
+
+      // marker scale (optional, used only for visualization)
+      m.scale.x = marker_size_;
+      m.scale.y = marker_size_;
+      m.scale.z = 0.01;
+
+      markers_msg.markers.push_back(m);
+    }
+
+    pub_markers_->publish(markers_msg);
   }
 
   // ==== Save marker to YAML (RPY version) ====
@@ -222,6 +254,7 @@ private:
   std::map<int, geometry_msgs::msg::Pose> last_marker_poses_;
 
   rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr marker_sub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_markers_;
 
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
