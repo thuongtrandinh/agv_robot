@@ -76,7 +76,18 @@ private:
         cap_ >> img;
         if (img.empty()) return;
 
-        detectAruco(img);
+        // Chuyển sang grayscale
+        cv::Mat gray;
+        cv::cvtColor(img, gray, cv::COLOR_BGR2GRAY);
+
+        // Giảm kích thước ảnh (50%)
+        cv::Mat small;
+        cv::resize(gray, small, cv::Size(), 0.5, 0.5);
+
+        // Xử lý song song, không block timer
+        std::async(std::launch::async, [this, small]() {
+            detectAruco(small);
+        });
     }
 
     void detectAruco(const cv::Mat &img) {
