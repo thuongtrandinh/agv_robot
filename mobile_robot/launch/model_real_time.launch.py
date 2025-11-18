@@ -13,7 +13,9 @@ def launch_setup(context, *args, **kwargs):
     # read Launch args early (used to decide whether to spawn controller / static TF)
     # CHANGED: spawn_diff_controller default=false (motor_odom will provide /diff_cont/odom)
     spawn_diff = context.launch_configurations.get('spawn_diff_controller', 'false').lower() in ['1','true','yes']
-    publish_static = context.launch_configurations.get('publish_static_odom', 'false').lower() in ['1','true','yes']
+    publish_static = context.launch_configurations.get('publish_static_odom', 'true').lower() in ['1','true','yes']
+    # new: allow disabling robot_state_publisher when an external node (e.g. micro-ROS) already provides it
+    use_robot_state_pub = context.launch_configurations.get('use_robot_state_publisher', 'false').lower() in ['1','true','yes']
 
     # ============================
     #  PATHS (relative in package)
@@ -38,17 +40,19 @@ def launch_setup(context, *args, **kwargs):
     print(f"CTRL YAML : {controller_yaml}\n")
 
     # ============================
-    #  1) robot_state_publisher
+    #  1) robot_state_publisher (optional)
     # ============================
-    robot_state_pub = Node(
-        package='robot_state_publisher',
-        executable='robot_state_publisher',
-        parameters=[
-            {'robot_description': robot_description},
-            {'use_sim_time': False}
-        ],
-        output='screen'
-    )
+    robot_state_pub = None
+    if use_robot_state_pub:
+        robot_state_pub = Node(
+            package='robot_state_publisher',
+            executable='robot_state_publisher',
+            parameters=[
+                {'robot_description': robot_description},
+                {'use_sim_time': False}
+            ],
+            output='screen'
+        )
 
     # ============================
     #  2) controller_manager
@@ -166,10 +170,12 @@ def launch_setup(context, *args, **kwargs):
 
     # build return list conditionally
     nodes = [
-        robot_state_pub,
         controller_manager,
         spawner_jsb,
     ]
+    if robot_state_pub:
+        # put robot_state_publisher first so TFs are available early
+        nodes.insert(0, robot_state_pub)
     if spawner_diff:
         nodes.append(spawner_diff)
     if static_odom_tf:
@@ -185,7 +191,9 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('spawn_diff_controller', default_value='false',
                                description='Spawn diff controller (default false; motor_odom provides odom)'),
-        DeclareLaunchArgument('publish_static_odom', default_value='false',
-                               description='Publish static odom->base_footprint (default false)'),
+        DeclareLaunchArgument('publish_static_odom', default_value='true',
+                               description='Publish static odom->base_footprint (default true)'),
+        DeclareLaunchArgument('use_robot_state_publisher', default_value='false',
+                               description='Start robot_state_publisher from this launch (default false; set true if no external rsp present)'),
         OpaqueFunction(function=launch_setup)
     ])
