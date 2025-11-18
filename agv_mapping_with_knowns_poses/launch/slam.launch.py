@@ -2,7 +2,7 @@ import os
 from launch import LaunchDescription
 from ament_index_python.packages import get_package_share_directory
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, TimerAction
 from launch.substitutions import LaunchConfiguration
 
 
@@ -109,18 +109,24 @@ def generate_launch_description():
         ],
     )
 
-    slam_toolbox = Node(
-        package="slam_toolbox",
-        executable="sync_slam_toolbox_node",
-        name="slam_toolbox",
-        output="screen",
-        parameters=[
-            slam_config,
-            {"use_sim_time": use_sim_time},
-        ],
-        remappings=[
-            # CRITICAL: Use filtered odometry instead of raw /odom
-            ("/odom", "/odometry/filtered"),
+    # Add a delay to ensure transforms and sensor data are initialized
+    slam_toolbox = TimerAction(
+        period=5.0,  # Delay for 5 seconds
+        actions=[
+            Node(
+                package="slam_toolbox",
+                executable="sync_slam_toolbox_node",
+                name="slam_toolbox",
+                output="screen",
+                parameters=[
+                    slam_config,
+                    {"use_sim_time": use_sim_time},
+                ],
+                remappings=[
+                    # CRITICAL: Use filtered odometry instead of raw /odom
+                    ("/odom", "/odometry/filtered"),
+                ]
+            )
         ]
     )
 
@@ -156,16 +162,35 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription([
-        use_sim_time_arg,
-        slam_config_arg,
-        # Sensor fusion nodes (reduce odometry drift!)
+    # Add a delay to AMCL initialization
+    amcl_node = TimerAction(
+        period=5.0,  # Delay for 5 seconds
+        actions=[
+            Node(
+                package="nav2_amcl",
+                executable="amcl",
+                name="amcl",
+                output="screen",
+                parameters=[
+                    {"use_sim_time": use_sim_time},
+                    {"initial_pose_x": 0.0},
+                    {"initial_pose_y": 0.0},
+                    {"initial_pose_a": 0.0},
+                ]
+            )
+        ]
+    )
+
+    # Ensure EKF and SLAM Toolbox are initialized first
+    nodes = [
         imu_republisher,
         odom_republisher,
         ekf_filter,
-        # SLAM nodes
-        nav2_map_saver,
         slam_toolbox,
+        amcl_node,
+        nav2_map_saver,
         aruco_mapper,
         nav2_lifecycle_manager,
-    ])
+    ]
+
+    return LaunchDescription(nodes)
