@@ -17,6 +17,9 @@ def launch_setup(context, *args, **kwargs):
     publish_static = context.launch_configurations.get('publish_static_odom', 'true').lower() in ['1','true','yes']
     use_robot_state_pub = context.launch_configurations.get('use_robot_state_publisher', 'true').lower() in ['1','true','yes']
     camera_dev = context.launch_configurations.get('camera_device', '/dev/video0')
+    # lidar params (allow overriding the serial port and baudrate from the launch command)
+    lidar_port = context.launch_configurations.get('lidar_serial_port', '/dev/ttyUSB1')
+    lidar_baud = int(context.launch_configurations.get('lidar_serial_baudrate', '256000'))
 
     # ============================
     #  PATHS (relative in package)
@@ -151,7 +154,8 @@ def launch_setup(context, *args, **kwargs):
         executable='rplidar_composition',
         name='rplidar',
         parameters=[
-            {'serial_port': '/dev/ttyUSB0'},
+            {'serial_port': lidar_port},
+            {'serial_baudrate': lidar_baud},
             {'frame_id': 'laser'},
             {'angle_compensate': True},
         ],
@@ -207,5 +211,9 @@ def generate_launch_description():
                                description='Start robot_state_publisher from this launch (default false; set true if no external rsp present)'),
         DeclareLaunchArgument('run_rviz', default_value='false',
                                description='Launch RViz2 (default false). Set true to run RViz from this launch.'),
+        DeclareLaunchArgument('lidar_serial_port', default_value='/dev/ttyUSB1',
+                               description='Serial port for RPLIDAR (default /dev/ttyUSB1)'),
+        DeclareLaunchArgument('lidar_serial_baudrate', default_value='256000',
+                               description='Serial baudrate for RPLIDAR (default 256000)'),
         OpaqueFunction(function=launch_setup)
     ])
