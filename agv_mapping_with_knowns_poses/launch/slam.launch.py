@@ -8,7 +8,7 @@ from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
 
-    use_sim_time = LaunchConfiguration("use_sim_time", default="false")
+    use_sim_time = LaunchConfiguration("use_sim_time")
     slam_config = LaunchConfiguration("slam_config")
 
     ros_distro = os.environ["ROS_DISTRO"]
@@ -18,7 +18,7 @@ def generate_launch_description():
 
     use_sim_time_arg = DeclareLaunchArgument(
         "use_sim_time",
-        default_value="false",
+        default_value="true",
         description="Use simulation time if true"
     )
 
@@ -122,6 +122,7 @@ def generate_launch_description():
                 parameters=[
                     slam_config,
                     {"use_sim_time": use_sim_time},
+                    {"queue_size": 50}  # Increase queue size to prevent message drops
                 ],
                 remappings=[
                     # CRITICAL: Use filtered odometry instead of raw /odom
@@ -145,7 +146,7 @@ def generate_launch_description():
             {"map_frame": "map"},
             {"camera_frame_id": "zed2_left_camera_frame"},
             {"marker_topic": "aruco/markers"},
-            {"marker_size": 0.173},
+            {"marker_size": 0.18},
             {"max_marker_distance": 3.0},
             {"max_jump_distance": 0.30},
         ],
