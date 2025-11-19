@@ -22,7 +22,7 @@ public:
     this->declare_parameter<bool>("feedback_is_linear_velocity", true);
     this->declare_parameter<std::string>("imu_topic", "/imu");
     this->declare_parameter<std::string>("motor_topic", "/motor_feedback");
-    this->declare_parameter<std::string>("odom_topic", "/odom");
+    this->declare_parameter<std::string>("odom_topic", "/diff_cont/odom");
     this->declare_parameter<std::string>("odom_frame", "odom");
     this->declare_parameter<std::string>("base_frame", "base_footprint");
 
