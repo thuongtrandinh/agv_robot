@@ -151,7 +151,7 @@ def launch_setup(context, *args, **kwargs):
                 {'camera_frame': 'zed2_left_camera_frame'},
                 {'calib_pkg': 'agv_zed2'},
                 {'calib_file': 'zed2_calibration_vga.yaml'},
-                {'marker_size': 0.173},
+                {'marker_size': 0.18},
             ]
         )
 
@@ -222,7 +222,8 @@ def launch_setup(context, *args, **kwargs):
 
     # sensors / visualisation
     # append rviz2 only if created
-    sensors_nodes = [aruco_detector, lidar_node, motor_odom]
+    # Ensure odometry (TF) is available before LIDAR publishes to avoid TF-extrapolation
+    sensors_nodes = [motor_odom, aruco_detector, lidar_node]
     if rviz2:
         sensors_nodes.append(rviz2)
     nodes += sensors_nodes

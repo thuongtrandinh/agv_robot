@@ -8,7 +8,7 @@ def generate_launch_description():
     from launch.actions import DeclareLaunchArgument, OpaqueFunction, TimerAction
     import xacro
 
-    use_sim_time = LaunchConfiguration("use_sim_time", default="true")
+    use_sim_time = LaunchConfiguration("use_sim_time", default="false")
 
     # ============================
     #  PATHS
@@ -222,7 +222,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument("use_sim_time", default_value="true"),
+        DeclareLaunchArgument("use_sim_time", default_value="false"),
         robot_state_pub,
         controller_manager,
         spawner_jsb,
