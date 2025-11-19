@@ -129,8 +129,12 @@ MappingWithKnownPoses::MappingWithKnownPoses(const std::string &name)
 
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+
+    // Use a larger QoS queue and best-effort reliability for sensor data
+    rclcpp::QoS scan_qos(rclcpp::KeepLast(50));
+    scan_qos.best_effort();
     scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
-        "scan", 10, std::bind(&MappingWithKnownPoses::scanCallback, this, _1));
+        "scan", scan_qos, std::bind(&MappingWithKnownPoses::scanCallback, this, _1));
     map_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>("map", 1);
     timer_ = create_wall_timer(1s, std::bind(&MappingWithKnownPoses::timerCallback, this));
     RCLCPP_INFO(this->get_logger(), "Mapping node started.");
