@@ -49,12 +49,23 @@ public:
 
     last_time_ = this->now();
 
+    // Reset odometry state on node startup
+    resetOdometry();
+
     RCLCPP_INFO(this->get_logger(),
                 "motor_odom started. motor_topic: %s  imu_topic: %s  (motor_feedback format: [right, left], left_index=%d right_index=%d)",
                 motor_topic.c_str(), imu_topic.c_str(), left_idx_, right_idx_);
   }
 
 private:
+  void resetOdometry() {
+    x_ = 0.0;
+    y_ = 0.0;
+    yaw_ = 0.0;
+    last_imu_q_ = geometry_msgs::msg::Quaternion();
+    RCLCPP_INFO(this->get_logger(), "Odometry state reset to initial values.");
+  }
+
   void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg) {
     last_imu_q_ = msg->orientation;
   }
