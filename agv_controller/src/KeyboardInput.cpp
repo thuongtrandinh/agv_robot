@@ -2,6 +2,7 @@
 #include <iostream>
 #include <csignal>
 #include <atomic>
+#include <cmath>
 
 // Global pointer for signal handler
 static KeyboardInput* g_keyboard_input_ptr = nullptr;
@@ -63,6 +64,7 @@ void KeyboardInput::keyboardLoop()
     char c;
 
     const double linear_step = 0.1;   // step tăng tốc
+    const double min_linear = 0.2;    // minimum linear speed when starting from 0
     const double angular_step = 0.1;  // step tăng góc
     const double max_linear = 1.0;    // giới hạn tốc độ tiến
     const double max_angular = 1.0;   // giới hạn tốc độ xoay
@@ -80,16 +82,26 @@ void KeyboardInput::keyboardLoop()
         {
         case 'w':
         case 'W':
-            linear_speed_ += linear_step;
-            if (linear_speed_ > max_linear)
-                linear_speed_ = max_linear;
+            if (std::fabs(linear_speed_) < 1e-6) {
+                // start from minimum linear speed instead of the small step
+                linear_speed_ = min_linear;
+            } else {
+                linear_speed_ += linear_step;
+                if (linear_speed_ > max_linear)
+                    linear_speed_ = max_linear;
+            }
             break;
 
         case 's':
         case 'S':
-            linear_speed_ -= linear_step;
-            if (linear_speed_ < -max_linear)
-                linear_speed_ = -max_linear;
+            if (std::fabs(linear_speed_) < 1e-6) {
+                // start moving backwards from -min_linear
+                linear_speed_ = -min_linear;
+            } else {
+                linear_speed_ -= linear_step;
+                if (linear_speed_ < -max_linear)
+                    linear_speed_ = -max_linear;
+            }
             break;
 
         case 'a':
