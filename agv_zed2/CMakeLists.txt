@@ -89,21 +89,6 @@ target_link_libraries(aruco_localizer
   yaml-cpp
 )
 
-# ======================================================
-# Node 4: camera_zed2
-# ======================================================
-add_executable(camera_zed2 src/camera_zed2.cpp)
-
-ament_target_dependencies(camera_zed2
-  rclcpp
-  sensor_msgs
-  cv_bridge
-  OpenCV
-)
-
-target_link_libraries(camera_zed2
-  ${OpenCV_LIBRARIES}
-)
 # =====================
 # Install executables
 # =====================
@@ -111,7 +96,6 @@ install(TARGETS
   aruco_detector
   aruco_mapper
   aruco_localizer
-  camera_zed2
   DESTINATION lib/${PROJECT_NAME}
 )
 
