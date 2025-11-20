@@ -1,244 +1,97 @@
 #!/usr/bin/env python3
 import os
 import xacro
-
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, TimerAction
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
-from launch.substitutions import LaunchConfiguration
 
 
 def launch_setup(context, *args, **kwargs):
-
-    # read Launch args early (used to decide whether to spawn controller / static TF)
-    # CHANGED: spawn_diff_controller default=false (motor_odom will provide /diff_cont/odom)
+    # read Launch args early
     spawn_diff = context.launch_configurations.get('spawn_diff_controller', 'false').lower() in ['1','true','yes']
-    publish_static = context.launch_configurations.get('publish_static_odom', 'true').lower() in ['1','true','yes']
     use_robot_state_pub = context.launch_configurations.get('use_robot_state_publisher', 'true').lower() in ['1','true','yes']
     camera_dev = context.launch_configurations.get('camera_device', '/dev/video0')
-    # lidar params (allow overriding the serial port and baudrate from the launch command)
     lidar_port = context.launch_configurations.get('lidar_serial_port', '/dev/ttyUSB1')
     lidar_baud = int(context.launch_configurations.get('lidar_serial_baudrate', '256000'))
+    use_sim_time = LaunchConfiguration('use_sim_time', default='false')
 
-    # ============================
-    #  PATHS (relative in package)
-    # ============================
     pkg_robot = get_package_share_directory('mobile_robot')
-    pkg_zed2  = get_package_share_directory('agv_zed2')
-
     urdf_file = os.path.join(pkg_robot, 'urdf/robot_real_time.urdf.xacro')
-    rviz_file = os.path.join(pkg_robot, 'rviz/rviz2.rviz')
-    controller_yaml = os.path.join(pkg_robot, 'config/robot_controller.yaml')
 
-    # ============================
-    #  LOAD URDF
-    # ============================
-    robot_description = xacro.process_file(
-        urdf_file,
-        mappings={'sim_mode': 'false'}
-    ).toxml()
+    # load URDF
+    robot_description = ""
+    try:
+        robot_description = xacro.process_file(urdf_file, mappings={'sim_mode': 'false'}).toxml()
+    except Exception:
+        robot_description = ""
 
-    print(f"\n🚀 REAL ROBOT LAUNCH")
-    print(f"URDF      : {urdf_file}")
-    print(f"CTRL YAML : {controller_yaml}\n")
-
-    # ============================
-    #  1) robot_state_publisher (optional)
-    # ============================
-    robot_state_pub = None
-    if use_robot_state_pub:
-        robot_state_pub = Node(
-            package='robot_state_publisher',
-            executable='robot_state_publisher',
-            parameters=[
-                {'robot_description': robot_description},
-                {'use_sim_time': False}
-            ],
-            output='screen'
-        )
-
-    # ============================
-    #  2) controller_manager
-    # ============================
-    controller_manager = Node(
-        package='controller_manager',
-        executable='ros2_control_node',
-        parameters=[
-            controller_yaml,
-            {'robot_description': robot_description}
-        ],
+    robot_state_pub = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        parameters=[{'robot_description': robot_description}, {'use_sim_time': use_sim_time}],
         output='screen'
     )
 
-    # ============================
-    #  3) Spawner — Joint State Broadcaster
-    # ============================
-    spawner_jsb = Node(
-        package='controller_manager',
-        executable='spawner',
-        arguments=['joint_broad'],
-        output='screen'
-    )
-
-    # ============================
-    #  3b) Optionally spawn diff controller (default: false)
-    #     motor_odom will provide /diff_cont/odom by default
-    # ============================
-    spawner_diff = None
-    if spawn_diff:
-        spawner_diff = Node(
-            package='controller_manager',
-            executable='spawner',
-            arguments=['diff_cont'],
-            output='screen'
-        )
-
-    # ============================
-    #  1c) Optional static odom->base for standalone runs (default: false)
-    # ============================
-    static_odom_tf = None
-    if publish_static:
-        static_odom_tf = Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='static_odom_to_base',
-            arguments=['0','0','0','0','0','0','odom','base_footprint'],
-            output='screen'
-        )
-
-    # ============================
-    #  ArUco Detector (only start if a usable /dev/video device is found)
-    # ============================
-    aruco_detector = None
-    if os.path.exists(camera_dev):
-        aruco_detector = Node(
-            package='agv_zed2',
-            executable='aruco_detector',
-            name='aruco_detector',
-            output='screen',
-            parameters=[
-                {'device': camera_dev},
-                {'camera_frame': 'zed2_left_camera_frame'},
-                {'calib_pkg': 'agv_zed2'},
-                {'calib_file': 'zed2_calibration_vga.yaml'},
-                {'marker_size': 0.18},
-            ]
-        )
-    else:
-        print(f"⚠️  ArUco camera device not found: {camera_dev} — skipping aruco_detector node")
-
-    # ============================
-    #  motor_odom: publishes /diff_cont/odom from /motor_feedback + /imu
-    # ============================
-    motor_odom = Node(
-        package='mobile_robot',
-        executable='motor_odom',
-        name='motor_odom',
+    # Single RPLIDAR node - configure lower published scan freq via scan_mode/frequency if supported
+    rplidar_node = Node(
+        package='rplidar_ros',
+        executable='rplidar_node',
+        name='rplidar_node',
         output='screen',
-        parameters=[
-            {'wheel_radius': 0.05},
-            {'wheel_separation': 0.46},
-            {'left_index': 1},
-            {'right_index': 0},
-            {'feedback_is_linear_velocity': True},
-            {'imu_topic': '/imu'},
-            {'motor_topic': '/motor_feedback'},
-            {'odom_topic': '/diff_cont/odom'},   # motor_odom is canonical odom source
-            {'odom_frame': 'odom'},
-            {'base_frame': 'base_footprint'},
+        parameters=[{
+            'channel_type': 'serial',
+            'serial_port': lidar_port,
+            'serial_baudrate': lidar_baud,
+            'frame_id': 'laser',
+            'inverted': False,
+            'angle_compensate': True,
+            # prefer low frequency to avoid overload; try 5-10 Hz
+            'scan_mode': 'Standard',
+            'frequency': 8.0
+        }]
+    )
+
+    # Delay mapping and localization to let LIDAR and TF warm up
+    mapping_node_delayed = TimerAction(
+        period=3.0,
+        actions=[
+            Node(
+                package='agv_mapping_with_knowns_poses',
+                executable='agv_mapping_with_knowns_poses',
+                name='mapping_with_known_poses',
+                output='screen',
+                parameters=[{'use_sim_time': use_sim_time}]
+            )
         ]
     )
 
-    # ============================
-    #  LIDAR
-    # ============================
-    # Remap lidar node to publish raw scans to /scan_raw. We'll throttle/republish to /scan below
-    lidar_node = Node(
-        package='rplidar_ros',
-        executable='rplidar_composition',
-        name='rplidar',
-        parameters=[
-            {'serial_port': lidar_port},
-            {'serial_baudrate': lidar_baud},
-            {'frame_id': 'laser'},
-            {'angle_compensate': True},
-            {'scan_mode': 'Standard'},
-            {'frequency': 5.0},
-            {'topic_name': 'scan_raw'}  # force node to publish to /scan_raw
-        ],
-        remappings=[('scan', 'scan_raw')],
-        output='screen'
+    localization_node_delayed = TimerAction(
+        period=4.0,
+        actions=[
+            Node(
+                package='agv_localization',
+                executable='odometry_motion_model',
+                name='odometry_motion_model',
+                output='screen',
+                parameters=[{'use_sim_time': use_sim_time}]
+            )
+        ]
     )
 
-    # small helper: throttle /scan_raw -> /scan at a lower frequency with refreshed timestamps
-    # Option A: start scan_throttle as a ROS2 node if installed as an executable in the package
-    # the script is installed as 'scan_throttle.py' into lib/<package>
-    scan_throttle_proc = Node(
-        package='mobile_robot',
-        executable='scan_throttle.py',
-        arguments=['--input', '/scan_raw', '--output', '/scan', '--frequency', str(5.0)],
-        output='screen'
-    )
-
-    # ============================
-    #  RViz (optional)
-    # ============================
-    rviz2 = None
-    run_rviz = context.launch_configurations.get('run_rviz', 'false').lower() in ['1','true','yes']
-    if run_rviz:
-        rviz2 = Node(
-            package='rviz2',
-            executable='rviz2',
-            arguments=['-d', rviz_file],
-            parameters=[{'use_sim_time': False}],
-            output='screen'
-        )
-
-    # build return list conditionally
-    nodes = [
-        controller_manager,
-        spawner_jsb,
+    return [
+        robot_state_pub,
+        rplidar_node,
+        mapping_node_delayed,
+        localization_node_delayed
     ]
-    if robot_state_pub:
-        # put robot_state_publisher first so TFs are available early
-        nodes.insert(0, robot_state_pub)
-    if spawner_diff:
-        nodes.append(spawner_diff)
-    if static_odom_tf:
-        nodes.insert(1, static_odom_tf)
-
-    # sensors / visualisation
-    # append rviz2 only if created
-    # Ensure odometry (TF) is available before LIDAR publishes to avoid TF-extrapolation
-    sensors_nodes = [motor_odom]
-    if aruco_detector:
-        sensors_nodes.append(aruco_detector)
-    sensors_nodes.append(lidar_node)
-    # append the throttle process so other nodes subscribe to a lower-rate /scan topic
-    sensors_nodes.append(scan_throttle_proc)
-    if rviz2:
-        sensors_nodes.append(rviz2)
-    nodes += sensors_nodes
-
-    return nodes
 
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('camera_device', default_value='/dev/video0',
-                               description='Video device for ArUco camera (e.g. /dev/video0'),
-        DeclareLaunchArgument('spawn_diff_controller', default_value='false',
-                               description='Spawn diff controller (default false; motor_odom provides odom)'),
-        DeclareLaunchArgument('publish_static_odom', default_value='true',
-                               description='Publish static odom->base_footprint (default true)'),
-        DeclareLaunchArgument('use_robot_state_publisher', default_value='true',
-                               description='Start robot_state_publisher from this launch (default false; set true if no external rsp present)'),
-        DeclareLaunchArgument('run_rviz', default_value='false',
-                               description='Launch RViz2 (default false). Set true to run RViz from this launch.'),
-        DeclareLaunchArgument('lidar_serial_port', default_value='/dev/ttyUSB1',
-                               description='Serial port for RPLIDAR (default /dev/ttyUSB1)'),
-        DeclareLaunchArgument('lidar_serial_baudrate', default_value='256000',
-                               description='Serial baudrate for RPLIDAR (default 256000)'),
+        DeclareLaunchArgument('use_sim_time', default_value='false'),
+        DeclareLaunchArgument('lidar_serial_port', default_value='/dev/ttyUSB1'),
+        DeclareLaunchArgument('lidar_serial_baudrate', default_value='256000'),
         OpaqueFunction(function=launch_setup)
     ])

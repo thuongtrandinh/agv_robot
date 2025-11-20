@@ -15,22 +15,22 @@ public:
     // Parameters (tune as needed)
     this->declare_parameter<double>("wheel_radius", 0.05);
     this->declare_parameter<double>("wheel_separation", 0.46);
-    // motor_feedback format used here: [ right, left ]
-    // therefore default left_index = 1, right_index = 0
     this->declare_parameter<int>("left_index", 1);
     this->declare_parameter<int>("right_index", 0);
     this->declare_parameter<bool>("feedback_is_linear_velocity", true);
-    this->declare_parameter<std::string>("imu_topic", "/imu");
-    this->declare_parameter<std::string>("motor_topic", "/motor_feedback");
-    this->declare_parameter<std::string>("odom_topic", "/diff_cont/odom");
-    this->declare_parameter<std::string>("odom_frame", "odom");
-    this->declare_parameter<std::string>("base_frame", "base_footprint");
+    // New param: odom publish rate (Hz)
+    this->declare_parameter<double>("odom_publish_rate", 13.0);
 
     wheel_radius_ = this->get_parameter("wheel_radius").as_double();
     wheel_separation_ = this->get_parameter("wheel_separation").as_double();
     left_idx_ = this->get_parameter("left_index").as_int();
     right_idx_ = this->get_parameter("right_index").as_int();
     feedback_linear_ = this->get_parameter("feedback_is_linear_velocity").as_bool();
+
+    double pub_rate = this->get_parameter("odom_publish_rate").as_double();
+    if (pub_rate <= 0.0) pub_rate = 13.0;
+    odom_publish_period_ = rclcpp::Duration::from_seconds(1.0 / pub_rate);
+    last_pub_time_ = this->now() - odom_publish_period_;
 
     std::string imu_topic = this->get_parameter("imu_topic").as_string();
     std::string motor_topic = this->get_parameter("motor_topic").as_string();
@@ -71,6 +71,8 @@ private:
   }
 
   void motorCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg) {
+    rclcpp::Time now = this->now();
+
     if (msg->data.size() <= std::max(left_idx_, right_idx_)) {
       RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
                           "motor_feedback size %zu too small", msg->data.size());
@@ -79,13 +81,6 @@ private:
 
     double left_val = msg->data[left_idx_];
     double right_val = msg->data[right_idx_];
-
-    rclcpp::Time now = this->now();
-    double dt = (now - last_time_).seconds();
-    if (dt <= 0.0) {
-      last_time_ = now;
-      return;
-    }
 
     // Interpret feedback
     double v_left = 0.0, v_right = 0.0;
@@ -103,7 +98,13 @@ private:
     double vx = (v_right + v_left) / 2.0;
     double vtheta = (v_right - v_left) / wheel_separation_;
 
-    // Integrate pose (simple Euler)
+    // compute dt and integrate pose (simple Euler)
+    double dt = (now - last_time_).seconds();
+    if (dt <= 0.0) {
+      last_time_ = now;
+      return;
+    }
+
     double dx = vx * dt;
     double dtheta = vtheta * dt;
 
@@ -148,19 +149,26 @@ private:
     odom.twist.covariance[0] = 1e-3;  // vx
     odom.twist.covariance[35] = 1e-3; // vyaw
 
-    odom_pub_->publish(odom);
+    // Publish only if not throttled (odom_publish_period_ == 0 => no throttling)
+    if (odom_publish_period_.seconds() <= 0.0 || (now - last_pub_time_) >= odom_publish_period_) {
+      odom_pub_->publish(odom);
 
-    // Broadcast TF odom -> base
-    geometry_msgs::msg::TransformStamped t;
-    t.header.stamp = now;
-    t.header.frame_id = odom_frame_;
-    t.child_frame_id = base_frame_;
-    t.transform.translation.x = x_;
-    t.transform.translation.y = y_;
-    t.transform.translation.z = 0.0;
-    t.transform.rotation = odom.pose.pose.orientation;
-    tf_broadcaster_->sendTransform(t);
+      // Broadcast TF odom -> base
+      geometry_msgs::msg::TransformStamped t;
+      t.header.stamp = now;
+      t.header.frame_id = odom_frame_;
+      t.child_frame_id = base_frame_;
+      t.transform.translation.x = x_;
+      t.transform.translation.y = y_;
+      t.transform.translation.z = 0.0;
+      t.transform.rotation = odom.pose.pose.orientation;
+      tf_broadcaster_->sendTransform(t);
 
+      // update last publish time
+      last_pub_time_ = now;
+    }
+
+    // update last integration time
     last_time_ = now;
   }
 
@@ -176,6 +184,8 @@ private:
 
   double x_{0.0}, y_{0.0}, yaw_{0.0};
   rclcpp::Time last_time_;
+  rclcpp::Time last_pub_time_;
+  rclcpp::Duration odom_publish_period_{rclcpp::Duration::from_seconds(0.0)};
   geometry_msgs::msg::Quaternion last_imu_q_{};
 
   std::string odom_frame_{"odom"};
