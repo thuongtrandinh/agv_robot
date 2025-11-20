@@ -17,7 +17,7 @@ void sigintHandler(int signum)
     std::exit(0);
 }
 
-KeyboardInput::KeyboardInput() : Node("keyboard_input"), running_(true), publish_enabled_(true)
+KeyboardInput::KeyboardInput() : Node("keyboard_input"), running_(true)
 {
     cmd_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>(
         "/diff_cont/cmd_vel", 10);
@@ -43,7 +43,7 @@ KeyboardInput::KeyboardInput() : Node("keyboard_input"), running_(true), publish
         "Keyboard teleop started.\n"
         "W/S = tăng / giảm tốc tiến\n"
         "A/D = tăng / giảm tốc quay\n"
-        "C = bật / tắt gửi lệnh vận tốc (toggle publish)\n"
+        "C = dừng robot\n"
         "Q = thoát\n"
         "Ctrl+C = dừng robot và thoát."
     );
@@ -120,25 +120,15 @@ void KeyboardInput::keyboardLoop()
 
         case 'c':
         case 'C':
-            // Toggle publishing on/off. When turning off, send one zero-velocity
-            // message to ensure robot stops, then stop publishing further commands.
-            if (publish_enabled_) {
-                publishCmd(0.0, 0.0);
-                publish_enabled_ = false;
-                std::cout << "\n[INFO] Publishing disabled (C pressed)." << std::endl;
-            } else {
-                publish_enabled_ = true;
-                std::cout << "\n[INFO] Publishing enabled (C pressed)." << std::endl;
-            }
+            linear_speed_  = 0.0;
+            angular_speed_ = 0.0;
             break;
 
         default:
             break;
         }
 
-        if (publish_enabled_) {
-            publishCmd(linear_speed_, angular_speed_);
-        }
+        publishCmd(linear_speed_, angular_speed_);
 
         std::cout << "\rLinear: " << linear_speed_
                   << " m/s | Angular: " << angular_speed_

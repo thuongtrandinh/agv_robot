@@ -4,7 +4,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist_stamped.hpp>
 #include <termios.h>
-#include <atomic>
 #include <thread>
 
 class KeyboardInput : public rclcpp::Node
@@ -16,7 +15,6 @@ public:
     void publishCmd(double linear, double angular);
 
     std::atomic<bool> running_;
-    std::atomic<bool> publish_enabled_;
 
 private:
     void keyboardLoop();
