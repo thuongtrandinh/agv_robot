@@ -40,13 +40,13 @@ def generate_launch_description():
     
     radius_arg = DeclareLaunchArgument(
         'radius',
-        default_value='5.0',
+        default_value='1.0',
         description='Circle radius for trajectory (meters)'
     )
     
     max_linear_vel_arg = DeclareLaunchArgument(
         'max_linear_vel',
-        default_value='0.8',  # Increased from 0.8 for better tracking
+        default_value='0.4',  # Increased from 0.8 for better tracking
         description='Maximum linear velocity (m/s)'
     )
     

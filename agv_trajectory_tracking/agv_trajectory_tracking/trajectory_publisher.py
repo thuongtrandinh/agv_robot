@@ -31,7 +31,7 @@ class TrajectoryPublisher(Node):
         self.declare_parameter('preview_time', 10.0)  # Seconds of trajectory to preview
         self.declare_parameter('center_x', 5.0)       # Trajectory center X coordinate
         self.declare_parameter('center_y', -2.0)      # Trajectory center Y coordinate
-        self.declare_parameter('radius', 2.0)         # Circle radius (m)
+        self.declare_parameter('radius', 1.0)         # Circle radius (m)
         
         self.trajectory_type = self.get_parameter('trajectory_type').value
         self.publish_rate = self.get_parameter('publish_rate').value
@@ -98,8 +98,9 @@ class TrajectoryPublisher(Node):
             x_ref, y_ref, theta_ref
         """
         # Parameters
-        side = 2.0          # Side length [m] - Increased for better visibility
-        T_side = 5.0       # Time per side (s) -> v = 2/5 = 0.4 m/s
+        # Side is defined relative to configured radius: full width = 2 * radius
+        side = 2.0 * self.radius
+        T_side = 5.0       # Time per side (s) -> v = side / T_side
         T_period = 4 * T_side  # Period (time for one complete loop)
         
         # Compute current position on square (relative to center)
@@ -143,7 +144,8 @@ class TrajectoryPublisher(Node):
             x_ref, y_ref, theta_ref
         """
         # Parameters
-        A = 5.0           # Amplitude (half width) - Increased for better visibility
+        # Use configured radius as amplitude for figure-8
+        A = self.radius           # Amplitude (half width)
         omega = 0.2       # Angular velocity [rad/s]
         
         # Compute trajectory (Lemniscate of Gerono parametric equations)

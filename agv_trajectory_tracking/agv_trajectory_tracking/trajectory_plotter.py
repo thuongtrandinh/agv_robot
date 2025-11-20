@@ -11,6 +11,7 @@ import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from nav_msgs.msg import Odometry
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.patches import Circle
@@ -50,7 +51,7 @@ class TrajectoryPlotter(Node):
             self.reference_callback, 10)
         
         self.pose_sub = self.create_subscription(
-            PoseWithCovarianceStamped, '/amcl_pose',
+            Odometry, '/diff_cont/odom',
             self.pose_callback, 10)
         
         # Setup matplotlib
@@ -120,33 +121,27 @@ class TrajectoryPlotter(Node):
                     self.ref_y.pop(0)
     
     def pose_callback(self, msg):
-        """Store actual robot trajectory and compute error"""
+        """Store actual robot trajectory and compute error from /odom"""
         x = msg.pose.pose.position.x
         y = msg.pose.pose.position.y
         point = (x, y)
-        
+
         # Add if different from last point
         if self.last_actual_point is None or \
            self.distance(point, self.last_actual_point) > 0.05:
             self.actual_x.append(x)
             self.actual_y.append(y)
             self.last_actual_point = point
-            
             # Limit history
             if len(self.actual_x) > self.max_history:
                 self.actual_x.pop(0)
                 self.actual_y.pop(0)
-            
-            # 🚀 IMPROVED: Compute CROSS-TRACK ERROR (perpendicular distance to path)
-            # This is more accurate than Euclidean distance to nearest point
-            if len(self.ref_x) > 1:  # Need at least 2 points to compute cross-track
+            # Compute cross-track error
+            if len(self.ref_x) > 1:
                 cross_track_error = self.compute_cross_track_error(point)
-                
                 current_time = self.get_clock().now().nanoseconds / 1e9 - self.start_time
                 self.time_stamps.append(current_time)
                 self.errors.append(cross_track_error)
-                
-                # Limit history
                 if len(self.errors) > self.max_history:
                     self.time_stamps.pop(0)
                     self.errors.pop(0)
