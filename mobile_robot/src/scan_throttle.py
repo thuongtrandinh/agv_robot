@@ -5,8 +5,8 @@ from sensor_msgs.msg import LaserScan
 class ScanThrottle(Node):
     def __init__(self):
         super().__init__('scan_throttle')
-        self.pub = self.create_publisher(LaserScan, '/scan_throttled', 10)
-        self.sub = self.create_subscription(LaserScan, '/scan', self.cb, 10)
+        self.pub = self.create_publisher(LaserScan, '/scan', 10)
+        self.sub = self.create_subscription(LaserScan, '/scan_raw', self.cb, 10)
         self.last_pub = self.get_clock().now()
         self.period = 1.0 / 5.0  # 5Hz
 

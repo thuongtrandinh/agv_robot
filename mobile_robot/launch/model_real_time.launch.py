@@ -248,6 +248,7 @@ def launch_setup(context, *args, **kwargs):
             {'serial_baudrate': lidar_baud},
             {'frame_id': 'laser'},
             {'angle_compensate': True},
+            {'topic_name': '/scan_raw'},
         ],
         output='screen'
     )
