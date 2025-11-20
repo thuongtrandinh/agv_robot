@@ -9,8 +9,8 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 def launch_setup(context, *args, **kwargs):
     """Setup function to handle map-specific configurations"""
     
-    map_name_str = context.launch_configurations['map_name']
-    use_sim_time = LaunchConfiguration("use_sim_time")
+    map_name_str = "lab208b3"  # Fixed to use the lab208b3 map
+    use_sim_time = LaunchConfiguration("use_sim_time", default="false")
     
     # Get spawn position from arguments
     init_x = float(context.launch_configurations['x_pos'])
@@ -22,14 +22,10 @@ def launch_setup(context, *args, **kwargs):
     pkg_dir = get_package_share_directory("agv_localization")
     
     # EKF config file for sensor fusion (IMU + Encoder Odometry)
-    # Standard pipeline: [Encoder + IMU] → EKF → /odometry/filtered
     ekf_local_config_file = os.path.join(pkg_dir, "config", "ekf.yaml")
     
-    # Select AMCL config based on map
-    if map_name_str == "small_warehouse":
-        amcl_config_file = os.path.join(pkg_dir, "config", "amcl_warehouse.yaml")
-    else:  # small_house or default
-        amcl_config_file = os.path.join(pkg_dir, "config", "amcl.yaml")
+    # Use the AMCL configuration for lab208b3
+    amcl_config_file = os.path.join(pkg_dir, "config", "amcl.yaml")
     
     print(f"✅ Loading map: {map_name_str}")
     print(f"✅ AMCL config: {amcl_config_file}")
@@ -39,17 +35,15 @@ def launch_setup(context, *args, **kwargs):
         get_package_share_directory("agv_mapping_with_knowns_poses"),
         "maps",
         map_name_str,
-        "map.yaml"
+        "lab208b3.yaml"
     ])
 
-    
     # Static transform to align map and odom frames at startup
-    # This ensures LIDAR scan aligns with map initially
     static_transform = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
         name="map_to_odom_publisher",
-        arguments=["0", "0", "0", "0", "0", "0", "map", "odom"],
+        arguments=["0", "0", "0", "0", "0", "3.14159", "map", "odom"],
         parameters=[{"use_sim_time": use_sim_time}],
     )
     
@@ -73,14 +67,12 @@ def launch_setup(context, *args, **kwargs):
         parameters=[
             amcl_config_file,
             {"use_sim_time": use_sim_time},
-            # Override initial pose from launch arguments
             {"set_initial_pose": True},
             {"initial_pose.x": init_x},
             {"initial_pose.y": init_y},
             {"initial_pose.z": 0.0},
             {"initial_pose.yaw": init_yaw},
         ]
-        # No remapping needed - AMCL uses TF (odom->base_footprint) from EKF
     )
 
     nav2_lifecycle_manager = Node(
@@ -98,11 +90,6 @@ def launch_setup(context, *args, **kwargs):
     # ==========================================
     # SENSOR FUSION: Single EKF (Standard Pipeline)
     # ==========================================
-    # Pipeline: [Encoder + IMU] → EKF → /odometry/filtered → AMCL → map
-    # TF: map → odom → base_footprint
-    
-    # 1. IMU Republisher - Add covariance to Gazebo IMU data
-    # TUNED for LOCALIZATION with EKF: Lower covariance = trust IMU more
     imu_republisher = Node(
         package="agv_localization",
         executable="imu_republisher",
@@ -112,28 +99,23 @@ def launch_setup(context, *args, **kwargs):
             {"use_sim_time": use_sim_time},
             {"input_topic": "/imu"},
             {"output_topic": "/imu_with_covariance"},
-            {"orientation_covariance": 0.01},           # CRITICAL: Trust IMU yaw
-            {"angular_velocity_covariance": 0.01},      # CRITICAL: Trust IMU angular velocity
-            {"linear_acceleration_covariance": 0.02}    # Used for ax by EKF
+            {"orientation_covariance": 0.01},
+            {"angular_velocity_covariance": 0.01},
+            {"linear_acceleration_covariance": 0.02}
         ]
     )
     
-    # 2. Odometry Republisher - Add covariance to diff_drive_controller odometry
-    # TUNED for LOCALIZATION with EKF: Match actual encoder accuracy
-    # Lower values = trust encoder more, higher values = trust less
     odom_republisher = Node(
         package='agv_localization',
         executable='odom_republisher',
         name='odom_republisher',
         output='screen',
         parameters=[
-            {'input_odom_topic': '/diff_cont/odom'},  # motor_odom source
+            {'input_odom_topic': '/diff_cont/odom'},
             {'output_odom_topic': '/diff_cont/odom_with_covariance'},
         ]
     )
     
-    # 3. EKF Node - Fuse IMU + Wheel Odometry
-    # Publishes /odometry/filtered (odom → base_footprint transform)
     ekf_filter = Node(
         package="robot_localization",
         executable="ekf_node",
@@ -143,13 +125,8 @@ def launch_setup(context, *args, **kwargs):
             ekf_local_config_file,
             {"use_sim_time": use_sim_time}
         ]
-        # Default output: /odometry/filtered (no remapping needed)
     )
     
-    # ============================
-    #  ArUco Localizer (from agv_zed2)
-    #  Publishes /aruco/pose_with_covariance in 'map' frame
-    # ============================
     aruco_localizer = Node(
         package="agv_zed2",
         executable="aruco_localizer",
@@ -172,30 +149,18 @@ def launch_setup(context, *args, **kwargs):
         nav2_map_server,
         nav2_amcl,
         nav2_lifecycle_manager,
-
-        # global_localization,
-        # Sensor Fusion nodes (Standard Pipeline)
-        imu_republisher,  # Add covariance to IMU
-        odom_republisher, # Add covariance to encoder odom
-        ekf_filter,       # EKF: Fuse IMU + Encoder → /odometry/filtered
-
-        # ArUco localization
+        imu_republisher,
+        odom_republisher,
+        ekf_filter,
         aruco_localizer,
     ]
 
 
 def generate_launch_description():
     
-    map_name_arg = DeclareLaunchArgument(
-        "map_name",
-        default_value="small_house",
-        description="Map name to load. Options: small_house, small_warehouse, room_20x20",
-        choices=["small_house", "small_warehouse", "room_20x20"]
-    )
-
     use_sim_time_arg = DeclareLaunchArgument(
         "use_sim_time",
-        default_value="true"
+        default_value="false"
     )
     
     x_pos_arg = DeclareLaunchArgument(
@@ -217,7 +182,6 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        map_name_arg,
         use_sim_time_arg,
         x_pos_arg,
         y_pos_arg,
