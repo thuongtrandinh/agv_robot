@@ -18,7 +18,8 @@ def generate_launch_description():
     inverted = LaunchConfiguration('inverted', default='false')
     angle_compensate = LaunchConfiguration('angle_compensate', default='true')
     scan_mode = LaunchConfiguration('scan_mode', default='Sensitivity')
-    
+    scan_frequency = LaunchConfiguration('scan_frequency', default='7.0')  # Giảm xuống 7Hz
+
     return LaunchDescription([
 
         DeclareLaunchArgument(
@@ -55,17 +56,27 @@ def generate_launch_description():
             default_value=scan_mode,
             description='Specifying scan mode of lidar'),
 
+        DeclareLaunchArgument(
+            'scan_frequency',
+            default_value=scan_frequency,
+            description='Specifying scan frequency (Hz)'
+        ),
 
         Node(
             package='rplidar_ros',
             executable='rplidar_node',
             name='rplidar_node',
-            parameters=[{'channel_type':channel_type,
-                         'serial_port': serial_port,
-                         'serial_baudrate': serial_baudrate,
-                         'frame_id': frame_id,
-                         'inverted': inverted,
-                         'angle_compensate': angle_compensate}],
-            output='screen'),
+            parameters=[{
+                'channel_type': channel_type,
+                'serial_port': serial_port,
+                'serial_baudrate': serial_baudrate,
+                'frame_id': frame_id,
+                'inverted': inverted,
+                'angle_compensate': angle_compensate,
+                'scan_mode': scan_mode,
+                'scan_frequency': scan_frequency  # Thêm dòng này
+            }],
+            output='screen'
+        ),
     ])
 

@@ -48,7 +48,14 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument("use_sim_time", default_value="false"),
-        DeclareLaunchArgument("slam_config", default_value=str(slam_config.perform(None))),
+        DeclareLaunchArgument(
+            "slam_config",
+            default_value=os.path.join(
+                get_package_share_directory("agv_mapping_with_knowns_poses"),
+                "config",
+                "slam_toolbox.yaml"
+            )
+        ),
         map_saver,
         slam_toolbox_delay,
         lifecycle
