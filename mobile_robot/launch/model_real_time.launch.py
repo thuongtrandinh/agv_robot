@@ -3,7 +3,7 @@ import os
 import xacro
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, ExecuteProcess
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 from launch.substitutions import LaunchConfiguration
@@ -110,19 +110,23 @@ def launch_setup(context, *args, **kwargs):
     # ============================
     #  ArUco Detector (only start if a usable /dev/video device is found)
     # ============================
-    aruco_detector = Node(
-        package='agv_zed2',
-        executable='aruco_detector',
-        name='aruco_detector',
-        output='screen',
-        parameters=[
-            {'device': camera_dev},
-            {'camera_frame': 'zed2_left_camera_frame'},
-            {'calib_pkg': 'agv_zed2'},
-            {'calib_file': 'zed2_calibration_vga.yaml'},
-            {'marker_size': 0.18},
-        ]
-    )
+    aruco_detector = None
+    if os.path.exists(camera_dev):
+        aruco_detector = Node(
+            package='agv_zed2',
+            executable='aruco_detector',
+            name='aruco_detector',
+            output='screen',
+            parameters=[
+                {'device': camera_dev},
+                {'camera_frame': 'zed2_left_camera_frame'},
+                {'calib_pkg': 'agv_zed2'},
+                {'calib_file': 'zed2_calibration_vga.yaml'},
+                {'marker_size': 0.18},
+            ]
+        )
+    else:
+        print(f"⚠️  ArUco camera device not found: {camera_dev} — skipping aruco_detector node")
 
     # ============================
     #  motor_odom: publishes /diff_cont/odom from /motor_feedback + /imu
@@ -149,6 +153,7 @@ def launch_setup(context, *args, **kwargs):
     # ============================
     #  LIDAR
     # ============================
+    # Remap lidar node to publish raw scans to /scan_raw. We'll throttle/republish to /scan below
     lidar_node = Node(
         package='rplidar_ros',
         executable='rplidar_composition',
@@ -158,9 +163,21 @@ def launch_setup(context, *args, **kwargs):
             {'serial_baudrate': lidar_baud},
             {'frame_id': 'laser'},
             {'angle_compensate': True},
-            {'scan_mode': 'Standard'},  # Chế độ quét mặc định
-            {'frequency': 5.0},        # Giảm tần số quét xuống 5Hz
+            {'scan_mode': 'Standard'},
+            {'frequency': 5.0},
+            {'topic_name': 'scan_raw'}  # force node to publish to /scan_raw
         ],
+        remappings=[('scan', 'scan_raw')],
+        output='screen'
+    )
+
+    # small helper: throttle /scan_raw -> /scan at a lower frequency with refreshed timestamps
+    # Option A: start scan_throttle as a ROS2 node if installed as an executable in the package
+    # the script is installed as 'scan_throttle.py' into lib/<package>
+    scan_throttle_proc = Node(
+        package='mobile_robot',
+        executable='scan_throttle.py',
+        arguments=['--input', '/scan_raw', '--output', '/scan', '--frequency', str(5.0)],
         output='screen'
     )
 
@@ -194,7 +211,12 @@ def launch_setup(context, *args, **kwargs):
     # sensors / visualisation
     # append rviz2 only if created
     # Ensure odometry (TF) is available before LIDAR publishes to avoid TF-extrapolation
-    sensors_nodes = [motor_odom, aruco_detector, lidar_node]
+    sensors_nodes = [motor_odom]
+    if aruco_detector:
+        sensors_nodes.append(aruco_detector)
+    sensors_nodes.append(lidar_node)
+    # append the throttle process so other nodes subscribe to a lower-rate /scan topic
+    sensors_nodes.append(scan_throttle_proc)
     if rviz2:
         sensors_nodes.append(rviz2)
     nodes += sensors_nodes
