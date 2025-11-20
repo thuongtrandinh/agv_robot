@@ -26,12 +26,14 @@ class TrajectoryPublisher(Node):
         
         # Parameters
         self.declare_parameter('trajectory_type', 2)  # 1:Circle, 2:Square, 3:Figure-8
-        self.declare_parameter('publish_rate', 50.0)  # Hz
+        self.declare_parameter('publish_rate', 20.0)  # Hz - Fixed optimal rate for real-time tracking
         self.declare_parameter('path_points', 200)    # Number of points in path
         self.declare_parameter('preview_time', 10.0)  # Seconds of trajectory to preview
         self.declare_parameter('center_x', 5.0)       # Trajectory center X coordinate
         self.declare_parameter('center_y', -2.0)      # Trajectory center Y coordinate
         self.declare_parameter('radius', 5.0)         # Circle radius (m)
+        self.declare_parameter('enable_publish', True)  # Enable/disable trajectory publishing
+        self.declare_parameter('trajectory_speed', 0.35)  # Trajectory reference speed (m/s) - OPTIMIZED for all
         
         self.trajectory_type = self.get_parameter('trajectory_type').value
         self.publish_rate = self.get_parameter('publish_rate').value
@@ -40,24 +42,51 @@ class TrajectoryPublisher(Node):
         self.center_x = self.get_parameter('center_x').value
         self.center_y = self.get_parameter('center_y').value
         self.radius = self.get_parameter('radius').value
+        self.enable_publish = self.get_parameter('enable_publish').value
+        self.trajectory_speed = self.get_parameter('trajectory_speed').value
         
         # Publisher
         self.path_pub = self.create_publisher(Path, '/trajectory', 10)
         
-        # Timer for publishing
-        timer_period = 1.0 / self.publish_rate
-        self.timer = self.create_timer(timer_period, self.publish_trajectory)
+        # Wait for robot to be ready (localization, controller, etc.)
+        self.startup_delay = 3.0  # seconds - Wait for robot systems to initialize
+        self.is_ready = False
+        
+        # Create startup timer (one-shot)
+        self.startup_timer = self.create_timer(self.startup_delay, self.on_startup_complete)
         
         # Trajectory state
         self.current_time = 0.0
+        timer_period = 1.0 / self.publish_rate
         self.dt = timer_period
+        
+        # Timer for publishing (will start after startup delay)
+        self.timer = self.create_timer(timer_period, self.publish_trajectory)
         
         self.get_logger().info(f'Trajectory Publisher started!')
         self.get_logger().info(f'  Type: {self.get_trajectory_name()}')
         self.get_logger().info(f'  Center: ({self.center_x:.1f}, {self.center_y:.1f})')
-        self.get_logger().info(f'  Radius: {self.radius:.1f} m')
-        self.get_logger().info(f'  Publishing at {self.publish_rate} Hz')
+        
+        # Display size based on trajectory type
+        if self.trajectory_type == 1:  # Circle
+            self.get_logger().info(f'  Circle Radius: {self.radius:.1f} m')
+        elif self.trajectory_type == 2:  # Square
+            side = self.radius * 2.0
+            self.get_logger().info(f'  Square Side: {side:.1f} m (radius param: {self.radius:.1f} m)')
+        elif self.trajectory_type == 3:  # Figure-8
+            amplitude = self.radius / 2.0
+            self.get_logger().info(f'  Figure-8 Amplitude: {amplitude:.1f} m (each circle radius: {amplitude:.1f} m, total radius param: {self.radius:.1f} m)')
+        
+        self.get_logger().info(f'  Publishing at {self.publish_rate} Hz (FIXED for real-time)')
         self.get_logger().info(f'  Path points: {self.path_points}')
+        self.get_logger().info(f'  Trajectory speed: {self.trajectory_speed} m/s')
+        self.get_logger().info(f'⏳ Waiting {self.startup_delay}s for robot to be ready...')
+    
+    def on_startup_complete(self):
+        """Called after startup delay - robot is ready"""
+        self.is_ready = True
+        self.startup_timer.cancel()  # Stop the one-shot timer
+        self.get_logger().info('✅ Robot ready! Starting trajectory publishing...')
     
     def get_trajectory_name(self):
         """Get human-readable trajectory name"""
@@ -75,7 +104,10 @@ class TrajectoryPublisher(Node):
         """
         # Parameters
         R = self.radius    # Radius [m] - Use configurable radius
-        omega = 0.2        # Angular velocity [rad/s]
+        # Angular velocity calculated from desired linear velocity
+        # omega = v / R, where v is desired speed
+        v_desired = self.trajectory_speed  # Use configurable trajectory speed
+        omega = v_desired / max(R, 0.1)  # Prevent division by zero
         
         # Use configurable center instead of fixed [0,0]
         center = [self.center_x, self.center_y]
@@ -98,9 +130,10 @@ class TrajectoryPublisher(Node):
             x_ref, y_ref, theta_ref
         """
         # Parameters
-        side = 8.0          # Side length [m] - Increased for better visibility
-        T_side = 20.0       # Time per side (s) -> v = 8/20 = 0.4 m/s
-        T_period = 4 * T_side  # Period (time for one complete loop)
+        side = self.radius * 2.0  # Side length [m] - Based on radius parameter
+        v_desired = self.trajectory_speed  # Use configurable trajectory speed
+        T_side = side / v_desired # Time per side (s)
+        T_period = 4 * T_side     # Period (time for one complete loop)
         
         # Compute current position on square (relative to center)
         time_in_period = t % T_period
@@ -143,8 +176,11 @@ class TrajectoryPublisher(Node):
             x_ref, y_ref, theta_ref
         """
         # Parameters
-        A = 5.0           # Amplitude (half width) - Increased for better visibility
-        omega = 0.2       # Angular velocity [rad/s]
+        # Each circle in figure-8 has radius = r/2, so amplitude A = r/2
+        A = self.radius / 2.0  # Amplitude (half width) - Based on radius parameter
+        v_desired = self.trajectory_speed  # Use configurable trajectory speed
+        # Approximate perimeter for figure-8, omega adjusted for desired speed
+        omega = v_desired / (2.0 * A)  # Adjusted angular velocity
         
         # Compute trajectory (Lemniscate of Gerono parametric equations)
         # Relative to origin
@@ -252,22 +288,36 @@ class TrajectoryPublisher(Node):
     
     def publish_trajectory(self):
         """Timer callback to publish reference trajectory points"""
-        # Generate and publish the reference points in the trajectory
-        path_msg = self.generate_path_message()
-        self.path_pub.publish(path_msg)
+        # Wait for startup delay before publishing
+        if not self.is_ready:
+            return
+        
+        # Check if publishing is enabled
+        if self.enable_publish:
+            # Generate and publish the reference points in the trajectory
+            path_msg = self.generate_path_message()
+            self.path_pub.publish(path_msg)
+            
+            # Get current reference for logging
+            x_ref, y_ref, theta_ref = self.trajectory_reference(self.current_time)
+            
+            # Log periodically for debugging purposes
+            self.get_logger().info(
+                f'Published trajectory | t={self.current_time:.2f}s | '
+                f'ref: x={x_ref:.3f}, y={y_ref:.3f}, θ={math.degrees(theta_ref):.1f}°',
+                throttle_duration_sec=2.0
+            )
+        else:
+            # Still log even if not publishing
+            x_ref, y_ref, theta_ref = self.trajectory_reference(self.current_time)
+            self.get_logger().info(
+                f'[NOT PUBLISHING] t={self.current_time:.2f}s | '
+                f'ref: x={x_ref:.3f}, y={y_ref:.3f}, θ={math.degrees(theta_ref):.1f}°',
+                throttle_duration_sec=2.0
+            )
         
         # Update time for the next set of points
         self.current_time += self.dt
-        
-        # Get current reference for logging
-        x_ref, y_ref, theta_ref = self.trajectory_reference(self.current_time)
-        
-        # Log periodically for debugging purposes
-        self.get_logger().info(
-            f'Published reference trajectory | t={self.current_time:.2f}s | '
-            f'Current ref: x={x_ref:.3f}, y={y_ref:.3f}, θ={math.degrees(theta_ref):.1f}°',
-            throttle_duration_sec=2.0
-        )
 
 
 

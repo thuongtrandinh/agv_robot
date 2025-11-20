@@ -46,14 +46,32 @@ def generate_launch_description():
     
     max_linear_vel_arg = DeclareLaunchArgument(
         'max_linear_vel',
-        default_value='1.2',  # Increased from 0.8 for better tracking
-        description='Maximum linear velocity (m/s)'
+        default_value='0.45',  # OPTIMIZED for stable tracking of all trajectories
+        description='Maximum robot linear velocity (m/s) - Optimal: 0.45'
     )
     
     max_angular_vel_arg = DeclareLaunchArgument(
         'max_angular_vel',
         default_value='1.5',  # Increased from 1.0 for sharper turns
         description='Maximum angular velocity (rad/s)'
+    )
+    
+    trajectory_speed_arg = DeclareLaunchArgument(
+        'trajectory_speed',
+        default_value='0.35',  # m/s - OPTIMIZED for Circle, Square, Figure-8
+        description='Trajectory reference speed (m/s) - Optimal: 0.35'
+    )
+    
+    enable_traj_publish_arg = DeclareLaunchArgument(
+        'enable_traj_publish',
+        default_value='true',
+        description='Enable/disable trajectory publishing'
+    )
+    
+    verbose_logging_arg = DeclareLaunchArgument(
+        'verbose_logging',
+        default_value='true',
+        description='Enable detailed velocity logging (v, omega, vL, vR)'
     )
     
     # Get launch configurations
@@ -63,6 +81,9 @@ def generate_launch_description():
     radius = LaunchConfiguration('radius')
     max_linear_vel = LaunchConfiguration('max_linear_vel')
     max_angular_vel = LaunchConfiguration('max_angular_vel')
+    trajectory_speed = LaunchConfiguration('trajectory_speed')
+    enable_traj_publish = LaunchConfiguration('enable_traj_publish')
+    verbose_logging = LaunchConfiguration('verbose_logging')
     
     # Node 1: Trajectory Publisher
     trajectory_publisher_node = Node(
@@ -75,9 +96,11 @@ def generate_launch_description():
             'center_x': center_x,
             'center_y': center_y,
             'radius': radius,
-            'publish_rate': 50.0,
+            'publish_rate': 20.0,  # FIXED at 20Hz for optimal real-time tracking
             'path_points': 200,
             'preview_time': 10.0,
+            'enable_publish': enable_traj_publish,  # Control trajectory publishing
+            'trajectory_speed': trajectory_speed,  # Configurable trajectory speed
         }],
     )
     
@@ -93,6 +116,8 @@ def generate_launch_description():
             'max_angular_vel': max_angular_vel,
             'control_frequency': 20.0,
             'goal_tolerance': 0.10,  # Reduced from 0.15 for tighter tracking
+            'enable_path_publish': True,  # Always enable path publishing to controller
+            'verbose_logging': verbose_logging,  # Control detailed velocity logging
         }],
     )
     
@@ -104,7 +129,8 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'max_history': 2000,
-            'update_interval': 100,  # ms
+            'update_interval': 25,  # ms - Fast real-time update (40 Hz) for smooth plotting
+            'publish_rate': 20.0,  # Fixed to match trajectory publisher
         }],
     )
     
@@ -116,6 +142,9 @@ def generate_launch_description():
         radius_arg,
         max_linear_vel_arg,
         max_angular_vel_arg,
+        trajectory_speed_arg,  # New: control trajectory speed
+        enable_traj_publish_arg,
+        verbose_logging_arg,
         
         # Nodes
         trajectory_publisher_node,
