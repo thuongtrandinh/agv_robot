@@ -281,7 +281,14 @@ def launch_setup(context, *args, **kwargs):
 
     # sensors / visualisation
     # append rviz2 only if created
-    sensors_nodes = [aruco_detector, lidar_node, motor_odom]
+    # Add scan_throttle node to reduce /scan to 5Hz
+    scan_throttle = Node(
+        package='mobile_robot',
+        executable='scan_throttle.py',
+        name='scan_throttle',
+        output='screen'
+    )
+    sensors_nodes = [aruco_detector, lidar_node, motor_odom, scan_throttle]
     if rviz2:
         sensors_nodes.append(rviz2)
     nodes += sensors_nodes
