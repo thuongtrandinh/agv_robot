@@ -108,7 +108,9 @@ class AgvIrttStarNode(Node):
         self.map_frame_id = msg.header.frame_id
 
         data = np.array(msg.data, dtype=np.int8).reshape((self.map_height, self.map_width))
-        data = np.flipud(data)
+        # Đảm bảo chiều dữ liệu đúng với file .pgm/.yaml
+        # Nếu vẫn lỗi, thử transpose để kiểm tra
+        # data = np.transpose(data)  # Nếu cần, thử mở dòng này
 
         # Obstacles gốc
         obstacles = (data > 50)
@@ -123,7 +125,7 @@ class AgvIrttStarNode(Node):
         free_ys, free_xs = np.where(~self.map_data)
         self.free_points = np.stack([
             free_xs * self.map_res + self.map_origin.x,
-            (self.map_height - 1 - free_ys) * self.map_res + self.map_origin.y
+            free_ys * self.map_res + self.map_origin.y
         ], axis=1)
 
     # ============================================
@@ -190,7 +192,7 @@ class AgvIrttStarNode(Node):
     # ============================================
     def world_to_map(self, p):
         mx = int((p[0] - self.map_origin.x) / self.map_res)
-        my = int(self.map_height - 1 - (p[1] - self.map_origin.y) / self.map_res)
+        my = int((p[1] - self.map_origin.y) / self.map_res)
         return mx, my
 
     def is_collision(self, p):

@@ -22,7 +22,7 @@ def generate_launch_description():
     # Declare arguments
     trajectory_type_arg = DeclareLaunchArgument(
         'trajectory_type',
-        default_value='2',
+        default_value='1',
         description='Trajectory type: 1=Circle, 2=Square, 3=Figure-8'
     )
     
@@ -46,13 +46,13 @@ def generate_launch_description():
     
     max_linear_vel_arg = DeclareLaunchArgument(
         'max_linear_vel',
-        default_value='1.2',  # Increased from 0.8 for better tracking
+        default_value='0.8',  # Increased from 0.8 for better tracking
         description='Maximum linear velocity (m/s)'
     )
     
     max_angular_vel_arg = DeclareLaunchArgument(
         'max_angular_vel',
-        default_value='1.5',  # Increased from 1.0 for sharper turns
+        default_value='1.0',  # Increased from 1.0 for sharper turns
         description='Maximum angular velocity (rad/s)'
     )
     
