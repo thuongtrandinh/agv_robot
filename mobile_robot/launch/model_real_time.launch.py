@@ -110,50 +110,19 @@ def launch_setup(context, *args, **kwargs):
     # ============================
     #  ArUco Detector (only start if a usable /dev/video device is found)
     # ============================
-    def probe_video_device(preferred_dev: str):
-        # Try preferred device first, then test /dev/video0..3
-        import os
-
-        candidates = []
-        if preferred_dev:
-            candidates.append(preferred_dev)
-        # add a few common device names
-        for i in range(0, 4):
-            dev = f"/dev/video{i}"
-            if dev not in candidates:
-                candidates.append(dev)
-
-        for dev in candidates:
-            try:
-                if not os.path.exists(dev):
-                    continue
-                # try to open device file to ensure it's present and accessible
-                fd = os.open(dev, os.O_RDWR | os.O_NONBLOCK)
-                os.close(fd)
-                return dev
-            except Exception:
-                continue
-        return None
-
-    selected_camera = probe_video_device(camera_dev)
-    if selected_camera is None:
-        aruco_detector = None
-        print(f"[WARNING] No usable camera device found (tried {camera_dev} and /dev/video0-3). Skipping aruco_detector.")
-    else:
-        print(f"[INFO] Using camera device: {selected_camera} for aruco_detector")
-        aruco_detector = Node(
-            package='agv_zed2',
-            executable='aruco_detector',
-            name='aruco_detector',
-            output='screen',
-            parameters=[
-                {'device': selected_camera},
-                {'camera_frame': 'zed2_left_camera_frame'},
-                {'calib_pkg': 'agv_zed2'},
-                {'calib_file': 'zed2_calibration_vga.yaml'},
-                {'marker_size': 0.18},
-            ]
-        )
+    aruco_detector = Node(
+        package='agv_zed2',
+        executable='aruco_detector',
+        name='aruco_detector',
+        output='screen',
+        parameters=[
+            {'device': camera_dev},
+            {'camera_frame': 'zed2_left_camera_frame'},
+            {'calib_pkg': 'agv_zed2'},
+            {'calib_file': 'zed2_calibration_vga.yaml'},
+            {'marker_size': 0.18},
+        ]
+    )
 
     # ============================
     #  motor_odom: publishes /diff_cont/odom from /motor_feedback + /imu
@@ -236,7 +205,7 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('camera_device', default_value='/dev/video0',
-                               description='Video device for ArUco camera (e.g. /dev/video0 or /dev/video1)'),
+                               description='Video device for ArUco camera (e.g. /dev/video0'),
         DeclareLaunchArgument('spawn_diff_controller', default_value='false',
                                description='Spawn diff controller (default false; motor_odom provides odom)'),
         DeclareLaunchArgument('publish_static_odom', default_value='true',
