@@ -7,6 +7,14 @@ from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
+    # Static transform to rotate map by pi (180 degrees) relative to odom
+    static_transform = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="map_to_odom_publisher",
+        arguments=["0", "0", "0", "0", "0", "3.14159", "map", "odom"],
+        output="screen"
+    )
     use_sim_time = LaunchConfiguration("use_sim_time", default="false")
     slam_config = LaunchConfiguration("slam_config", default=os.path.join(
         get_package_share_directory("agv_mapping_with_knowns_poses"),
@@ -56,6 +64,7 @@ def generate_launch_description():
                 "slam_toolbox.yaml"
             )
         ),
+        static_transform,
         map_saver,
         slam_toolbox_delay,
         lifecycle
