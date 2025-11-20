@@ -47,6 +47,15 @@ def launch_setup(context, *args, **kwargs):
         parameters=[{"use_sim_time": use_sim_time}],
     )
     
+    # Static transform for laser frame to ensure transforms are available
+    static_transform_laser = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="laser_to_base_link_publisher",
+        arguments=["0", "0", "0", "0", "0", "0", "laser", "base_link"],
+        parameters=[{"use_sim_time": use_sim_time}],
+    )
+
     nav2_map_server = Node(
         package="nav2_map_server",
         executable="map_server",
@@ -58,33 +67,45 @@ def launch_setup(context, *args, **kwargs):
         ],
     )
 
-    nav2_amcl = Node(
-        package="nav2_amcl",
-        executable="amcl",
-        name="amcl",
-        output="screen",
-        emulate_tty=True,
-        parameters=[
-            amcl_config_file,
-            {"use_sim_time": use_sim_time},
-            {"set_initial_pose": True},
-            {"initial_pose.x": init_x},
-            {"initial_pose.y": init_y},
-            {"initial_pose.z": 0.0},
-            {"initial_pose.yaw": init_yaw},
+    # Delay AMCL activation to ensure transforms are available
+    delayed_amcl = TimerAction(
+        period=5.0,  # Delay AMCL activation by 5 seconds
+        actions=[
+            Node(
+                package="nav2_amcl",
+                executable="amcl",
+                name="amcl",
+                output="screen",
+                emulate_tty=True,
+                parameters=[
+                    amcl_config_file,
+                    {"use_sim_time": use_sim_time},
+                    {"set_initial_pose": True},
+                    {"initial_pose.x": init_x},
+                    {"initial_pose.y": init_y},
+                    {"initial_pose.z": 0.0},
+                    {"initial_pose.yaw": init_yaw},
+                ]
+            )
         ]
     )
 
-    nav2_lifecycle_manager = Node(
-        package="nav2_lifecycle_manager",
-        executable="lifecycle_manager",
-        name="lifecycle_manager_localization",
-        output="screen",
-        parameters=[
-            {"node_names": lifecycle_nodes},
-            {"use_sim_time": use_sim_time},
-            {"autostart": True}
-        ],
+    # Delay lifecycle manager to ensure all nodes are ready
+    delayed_lifecycle_manager = TimerAction(
+        period=7.0,  # Delay lifecycle manager by 7 seconds
+        actions=[
+            Node(
+                package="nav2_lifecycle_manager",
+                executable="lifecycle_manager",
+                name="lifecycle_manager_localization",
+                output="screen",
+                parameters=[
+                    {"node_names": lifecycle_nodes},
+                    {"use_sim_time": use_sim_time},
+                    {"autostart": True}
+                ],
+            )
+        ]
     )
     
     # ==========================================
@@ -146,9 +167,10 @@ def launch_setup(context, *args, **kwargs):
 
     return [
         static_transform,
+        static_transform_laser,  # Add static transform for laser frame
         nav2_map_server,
-        nav2_amcl,
-        nav2_lifecycle_manager,
+        delayed_amcl,  # Use delayed AMCL activation
+        delayed_lifecycle_manager,  # Delay lifecycle manager
         imu_republisher,
         odom_republisher,
         ekf_filter,

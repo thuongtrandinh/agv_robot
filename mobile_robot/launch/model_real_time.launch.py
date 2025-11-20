@@ -189,6 +189,8 @@ def launch_setup(context, *args, **kwargs):
             {'serial_baudrate': lidar_baud},
             {'frame_id': 'laser'},
             {'angle_compensate': True},
+            {'scan_mode': 'Standard'},  # Chế độ quét mặc định
+            {'frequency': 5.0},        # Giảm tần số quét xuống 5Hz
         ],
         output='screen'
     )
