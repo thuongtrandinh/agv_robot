@@ -38,7 +38,7 @@ def launch_setup(context, *args, **kwargs):
         package="tf2_ros",
         executable="static_transform_publisher",
         name="map_to_odom_publisher",
-        arguments=["0", "0", "0", "0", "0", "0", "map", "odom"],
+        arguments=["0", "0", "0", "0", "0", "-1.5708", "map", "odom"],
         parameters=[{"use_sim_time": use_sim_time}],
         output="screen"
     )
