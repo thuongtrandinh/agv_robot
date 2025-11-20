@@ -31,7 +31,7 @@ class TrajectoryPublisher(Node):
         self.declare_parameter('preview_time', 10.0)  # Seconds of trajectory to preview
         self.declare_parameter('center_x', 5.0)       # Trajectory center X coordinate
         self.declare_parameter('center_y', -2.0)      # Trajectory center Y coordinate
-        self.declare_parameter('radius', 5.0)         # Circle radius (m)
+        self.declare_parameter('radius', 2.0)         # Circle radius (m)
         
         self.trajectory_type = self.get_parameter('trajectory_type').value
         self.publish_rate = self.get_parameter('publish_rate').value
@@ -98,8 +98,8 @@ class TrajectoryPublisher(Node):
             x_ref, y_ref, theta_ref
         """
         # Parameters
-        side = 8.0          # Side length [m] - Increased for better visibility
-        T_side = 20.0       # Time per side (s) -> v = 8/20 = 0.4 m/s
+        side = 2.0          # Side length [m] - Increased for better visibility
+        T_side = 5.0       # Time per side (s) -> v = 2/5 = 0.4 m/s
         T_period = 4 * T_side  # Period (time for one complete loop)
         
         # Compute current position on square (relative to center)
