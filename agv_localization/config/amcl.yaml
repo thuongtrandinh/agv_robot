@@ -50,8 +50,8 @@ amcl:
     # Initial pose - MUST match robot spawn position in Gazebo!
     set_initial_pose: true
     initial_pose:
-      x: 0  # Match x_pos in launch_sim.launch.py
-      y: 0  # Match y_pos in launch_sim.launch.py
+      x: 0.0  # Match x_pos in launch_sim.launch.py
+      y: 0.0  # Match y_pos in launch_sim.launch.py
       z: 0.0
       yaw: 0.0  # Match robot orientation at spawn
     

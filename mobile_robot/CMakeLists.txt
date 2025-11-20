@@ -62,7 +62,6 @@ install(TARGETS simple_controller motor_odom
 # Install Python scripts
 install(PROGRAMS
   src/scan_repub.py
-  scripts/scan_throttle.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

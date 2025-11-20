@@ -20,6 +20,12 @@ public:
     this->declare_parameter<bool>("feedback_is_linear_velocity", true);
     // New param: odom publish rate (Hz)
     this->declare_parameter<double>("odom_publish_rate", 13.0);
+    // Topics and frames
+    this->declare_parameter<std::string>("imu_topic", "/imu");
+    this->declare_parameter<std::string>("motor_topic", "/motor_feedback");
+    this->declare_parameter<std::string>("odom_topic", "/diff_cont/odom");
+    this->declare_parameter<std::string>("odom_frame", "odom");
+    this->declare_parameter<std::string>("base_frame", "base_footprint");
 
     wheel_radius_ = this->get_parameter("wheel_radius").as_double();
     wheel_separation_ = this->get_parameter("wheel_separation").as_double();
