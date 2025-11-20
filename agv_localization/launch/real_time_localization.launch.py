@@ -56,7 +56,7 @@ def launch_setup(context, *args, **kwargs):
 
     # Delay AMCL activation to ensure transforms are available
     amcl_delayed = TimerAction(
-        period=2.5,  # Delay AMCL activation by 2.5 seconds
+        period=5.0,  # Delay AMCL activation by 5 seconds
         actions=[
             Node(
                 package="nav2_amcl",

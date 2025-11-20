@@ -1,106 +1,70 @@
 amcl:
   ros__parameters:
-    use_sim_time: True
-    alpha1: 0.2
-    alpha2: 0.2
-    alpha3: 0.2
-    alpha4: 0.2
-    base_frame_id: "base_footprint"
-    beam_skip_distance: 0.5
-    beam_skip_error_threshold: 0.9
-    beam_skip_threshold: 0.3
-    do_beamskip: false
+    # Prefer controlling use_sim_time from the launch file. If you run in simulation
+    # pass use_sim_time=True in the launch; leaving it out here avoids mismatches.
+    # use_sim_time: False
+
+    # Frames
     global_frame_id: "map"
     odom_frame_id: "odom"
     base_frame_id: "base_footprint"
-    
-    # ==========================================
+
     # ODOMETRY MODEL - Use wheel encoder + IMU
-    # ==========================================
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
-    
-    # Odometry noise model (alpha parameters)
-    # BALANCED: Trust EKF but also allow AMCL to correct
-    # Sweet spot: 0.08-0.12 for EKF-filtered odometry
-    alpha1: 0.1   # Rotation noise from rotation
-    alpha2: 0.1   # Rotation noise from translation
-    alpha3: 0.1   # Translation noise from translation
-    alpha4: 0.1   # Translation noise from rotation
-    alpha5: 0.1   # Strafe noise
-    
-    # ==========================================
-    # SENSOR TOPICS
-    # ==========================================
-    scan_topic: scan  # LiDAR topic
-    # AMCL will subscribe to /diff_cont/odom_with_covariance automatically
-    # because it looks for Odometry messages on the odom frame
-    
-    # ==========================================
-    # TRANSFORM & TIMING
-    # ==========================================
+    alpha1: 0.1
+    alpha2: 0.1
+    alpha3: 0.1
+    alpha4: 0.1
+    alpha5: 0.1
+
+    # Sensor topics
+    scan_topic: /scan
+
+    # Transform & timing
     tf_broadcast: true
     transform_tolerance: 1.0
-    update_min_a: 0.2
-    update_min_d: 0.25
-    z_hit: 0.5
-    z_max: 0.05
-    z_rand: 0.5
-    z_short: 0.05
-    scan_topic: scan
-    # Initial pose - MUST match robot spawn position in Gazebo!
+    update_min_a: 0.1
+    update_min_d: 0.1
+
+    # Initial pose (floats)
     set_initial_pose: true
     initial_pose:
-      x: 0.0  # Match x_pos in launch_sim.launch.py
-      y: 0.0  # Match y_pos in launch_sim.launch.py
+      x: 0.0
+      y: 0.0
       z: 0.0
-      yaw: 0.0  # Match robot orientation at spawn
-    
-    # ==========================================
-    # PARTICLE FILTER SETTINGS
-    # ==========================================
-    # TUNED: Fewer particles since EKF odometry is accurate
-    max_particles: 1000   # Reduced from 2000
-    min_particles: 200    # Reduced from 500
-    pf_err: 0.03          # Reduced from 0.05 (tighter convergence)
+      yaw: 0.0
+
+    # Particle filter settings
+    max_particles: 1000
+    min_particles: 200
+    pf_err: 0.03
     pf_z: 0.99
     resample_interval: 1
-    
-    # Update thresholds (when to update filter)
-    # TUNED: Update more frequently for smoother tracking
-    update_min_d: 0.1     # Reduced from 0.25 (update every 10cm)
-    update_min_a: 0.1     # Reduced from 0.2 (update every ~6 degrees)
-    
-    # ==========================================
-    # LASER MODEL
-    # ==========================================
+
+    # Laser model
     laser_model_type: "likelihood_field"
-    max_beams: 60
+    max_beams: 30
     laser_max_range: 100.0
-    laser_min_range: -1.0
+    laser_min_range: 0.0
     laser_likelihood_max_dist: 2.0
-    
+
     # Laser model weights
-    # BALANCED: Trust laser but also account for noise
-    z_hit: 0.7        # Good matches (not too high)
+    z_hit: 0.7
     z_short: 0.05
     z_max: 0.05
-    z_rand: 0.2       # Some random noise tolerance
-    sigma_hit: 0.18   # Moderate beam matching tolerance
+    z_rand: 0.2
+    sigma_hit: 0.18
     lambda_short: 0.1
-    
-    # Beam skip (for computational efficiency)
-    do_beamskip: false
+
+    # Beam skip (improves performance / ignores inconsistent beams)
+    do_beamskip: true
     beam_skip_distance: 0.5
     beam_skip_error_threshold: 0.9
     beam_skip_threshold: 0.3
-    
-    # ==========================================
-    # RECOVERY BEHAVIOR
-    # ==========================================
+
+    # Recovery
     recovery_alpha_fast: 0.0
     recovery_alpha_slow: 0.0
-    
-    # ==========================================
-    # POSE PUBLISHING
-    # ==========================================
+
+    # Pose publishing
     save_pose_rate: 0.5

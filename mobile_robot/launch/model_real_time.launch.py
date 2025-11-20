@@ -64,7 +64,7 @@ def generate_launch_description():
             {'odom_topic': '/diff_cont/odom'},
             {'odom_frame': 'odom'},
             {'base_frame': 'base_footprint'},
-            {'odom_publish_rate': 13.0}
+            {'odom_publish_rate': 20.0},
         ]
     )
 
