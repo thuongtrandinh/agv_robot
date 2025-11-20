@@ -66,6 +66,8 @@ def launch_setup(context, *args, **kwargs):
                 parameters=[
                     amcl_config_file,
                     {"use_sim_time": use_sim_time},
+                    {"scan_topic": "/scan"},
+                    {"scan_queue_size": 50},
                 ],
                 remappings=[("/scan", "/scan")]
             )

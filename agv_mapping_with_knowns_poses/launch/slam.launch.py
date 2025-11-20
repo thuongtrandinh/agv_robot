@@ -32,7 +32,7 @@ def generate_launch_description():
                 executable="sync_slam_toolbox_node",
                 name="slam_toolbox",
                 output="screen",
-                parameters=[slam_config, {"use_sim_time": use_sim_time}],
+                parameters=[slam_config, {"use_sim_time": use_sim_time}, {"scan_queue_size": 50}],
                 remappings=[("/scan", "/scan")]
             )
         ]
