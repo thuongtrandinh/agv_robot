@@ -128,21 +128,15 @@ private:
     odom.pose.pose.position.y = y_;
     odom.pose.pose.position.z = 0.0;
 
-    if (validQuaternion(last_imu_q_)) {
-      odom.pose.pose.orientation = last_imu_q_;
-      // Update yaw_ from IMU orientation for integration consistency
-      tf2::Quaternion q(last_imu_q_.x, last_imu_q_.y, last_imu_q_.z, last_imu_q_.w);
-      double roll, pitch, imu_yaw;
-      tf2::Matrix3x3(q).getRPY(roll, pitch, imu_yaw);
-      yaw_ = imu_yaw;
-    } else {
-      tf2::Quaternion q;
-      q.setRPY(0, 0, yaw_);
-      odom.pose.pose.orientation.x = q.x();
-      odom.pose.pose.orientation.y = q.y();
-      odom.pose.pose.orientation.z = q.z();
-      odom.pose.pose.orientation.w = q.w();
-    }
+    // CRITICAL FIX: Always use encoder-based yaw (yaw_) computed from wheel velocities
+    // Do NOT use IMU yaw here - it causes drift during reverse motion
+    // EKF will fuse this encoder yaw with IMU angular velocity for best accuracy
+    tf2::Quaternion q;
+    q.setRPY(0, 0, yaw_);
+    odom.pose.pose.orientation.x = q.x();
+    odom.pose.pose.orientation.y = q.y();
+    odom.pose.pose.orientation.z = q.z();
+    odom.pose.pose.orientation.w = q.w();
 
     odom.twist.twist.linear.x = vx;
     odom.twist.twist.angular.z = vtheta;

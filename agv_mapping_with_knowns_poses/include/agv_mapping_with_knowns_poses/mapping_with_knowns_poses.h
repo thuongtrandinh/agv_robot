@@ -58,6 +58,15 @@ private:
     rclcpp::TimerBase::SharedPtr timer_;
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
+    
+    // Mapping activation control
+    bool mapping_active_;
+    double min_travel_distance_;
+    double startup_delay_;
+    double total_distance_;
+    double last_pose_x_{0.0};
+    double last_pose_y_{0.0};
+    rclcpp::Time startup_time_;
 };
 }  // namespace agv_mapping_with_knowns_poses
 

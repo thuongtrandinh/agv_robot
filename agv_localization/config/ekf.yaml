@@ -53,13 +53,15 @@ ekf_filter_node:
       # do not provide some of the state variables estimated by the filter. For example, a TwistWithCovarianceStamped message
       # has no pose information, so the first six values would be meaningless in that case. Each vector defaults to all false
       # if unspecified, effectively making this parameter required for each sensor.
+      # CRITICAL FIX: Disable IMU yaw (position 5) to prevent drift during reverse motion
+      # Only use IMU angular velocity (vyaw) and linear acceleration (ax)
       imu0_config: [false, false, false,
-                    false, false, true,
+                    false, false, false,
                     false, false, false,
                     false, false, true,
                     true,  false, false]
 
-      imu0_differential: true
+      imu0_differential: false
       imu0_pose_use_child_frame: false
       imu0_remove_gravitational_acceleration: true
       
@@ -74,13 +76,14 @@ ekf_filter_node:
       # default values, and must be specified.
       odom0: /diff_cont/odom  # Use odometry with covariance added by odom_republisher
 
-      # Use BOTH position AND velocities from encoder for best accuracy
+      # Use position (x,y,yaw) AND velocities from encoder for best accuracy
+      # ADDED: yaw from odometry to replace drifting IMU yaw
       # Position helps prevent drift accumulation
       # Order: x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az
-      odom0_config: [true, true, false,
-                     false, false, false,
-                     true, true, false,
-                     false, false, false,
+      odom0_config: [true,  true,  false,
+                     false, false, true,
+                     true,  false, false,
+                     false, false, true,
                      false, false, false]
 
       # [ADVANCED] When measuring one pose variable with two sensors, a situation can arise in which both sensors under-

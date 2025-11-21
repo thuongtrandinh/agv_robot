@@ -101,8 +101,9 @@ def generate_launch_description():
     )
 
     # SLAM Toolbox (delayed to ensure /scan and TF are stable)
+    # INCREASED delay to 8s to wait for odometry/filtered to stabilize
     slam_toolbox_delayed = TimerAction(
-        period=5.0,
+        period=8.0,  # Wait 8 seconds for EKF to stabilize
         actions=[
             Node(
                 package="slam_toolbox",
