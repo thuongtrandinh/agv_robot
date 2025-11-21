@@ -100,7 +100,7 @@ echo -e "${GREEN}========================================${NC}"
 
 # Source ROS2 workspace
 echo -e "${YELLOW}Sourcing ROS2 workspace...${NC}"
-cd ~/ros2_ws
+cd /home/thuong/ros2_ws
 source install/setup.bash
 
 # Default parameters
@@ -110,6 +110,10 @@ WORLD="small_house.world"
 MAP_NAME="small_house"
 TRAJECTORY_TYPE=2  # 1=Circle, 2=Square, 3=Figure-8
 RADIUS=2.0  # Circle radius in meters
+TRAJECTORY_SPEED=0.33  # m/s - Trajectory reference speed (OPTIMIZED for Figure-8 smooth flow: 0.33)
+MAX_LINEAR_VEL=0.38  # m/s - Maximum robot velocity (TUNED for Figure-8 smooth tracking: 0.38)
+ENABLE_TRAJ_PUBLISH="true"  # Enable/disable trajectory publishing (default: true)
+VERBOSE_LOGGING="true"  # Enable detailed velocity logging (default: true)
 
 # Parse command line arguments (optional)
 while [[ $# -gt 0 ]]; do
@@ -154,14 +158,44 @@ while [[ $# -gt 0 ]]; do
             fi
             shift 2
             ;;
+        -s|--traj-speed)
+            TRAJECTORY_SPEED="$2"
+            # Ensure float format (add .0 if integer)
+            if [[ "$TRAJECTORY_SPEED" =~ ^-?[0-9]+$ ]]; then
+                TRAJECTORY_SPEED="${TRAJECTORY_SPEED}.0"
+            fi
+            shift 2
+            ;;
+        -v|--max-vel)
+            MAX_LINEAR_VEL="$2"
+            # Ensure float format (add .0 if integer)
+            if [[ "$MAX_LINEAR_VEL" =~ ^-?[0-9]+$ ]]; then
+                MAX_LINEAR_VEL="${MAX_LINEAR_VEL}.0"
+            fi
+            shift 2
+            ;;
+        --enable-traj)
+            ENABLE_TRAJ_PUBLISH="$2"
+            shift 2
+            ;;
+        --verbose)
+            VERBOSE_LOGGING="$2"
+            shift 2
+            ;;
         -h|--help)
             echo "Usage: ./run_sim.sh [OPTIONS]"
             echo "Options:"
-            echo "  -x, --x-pos X          Set robot spawn X position (default: 5.0)"
-            echo "  -y, --y-pos Y          Set robot spawn Y position (default: -2.0)"
+            echo "  -x, --x-pos X          Set robot spawn X position (default: 0.0)"
+            echo "  -y, --y-pos Y          Set robot spawn Y position (default: 0.0)"
             echo "  -w, --world WORLD      Set world file (default: small_house.world)"
-            echo "  -t, --trajectory TYPE  Set trajectory type: 1=Circle, 2=Square, 3=Figure-8 (default: 1)"
-            echo "  -r, --radius R         Set circle radius in meters (default: 2.0)"
+            echo "  -t, --trajectory TYPE  Set trajectory type: 1=Circle, 2=Square, 3=Figure-8 (default: 2)"
+            echo "  -r, --radius R         Set trajectory size parameter in meters (default: 2.0)"
+            echo "                         Circle: radius=R, Square: side=2*R, Figure-8: each circle radius=R/2"
+            echo "  -s, --traj-speed S     Set trajectory reference speed in m/s (default: 0.3)"
+            echo "                         Controls how fast the blue reference path moves"
+            echo "  -v, --max-vel V        Set maximum robot velocity in m/s (default: 0.4)"
+            echo "  --enable-traj BOOL     Enable/disable trajectory publishing: true|false (default: true)"
+            echo "  --verbose BOOL         Enable detailed velocity logging (v, omega, vL, vR): true|false (default: true)"
             echo "  -h, --help             Show this help message"
             exit 0
             ;;
@@ -177,7 +211,13 @@ echo "  Spawn Position: ($X_POS, $Y_POS)"
 echo "  World: $WORLD"
 echo "  Map: $MAP_NAME"
 echo "  Trajectory Type: $TRAJECTORY_TYPE"
-echo "  Circle Radius: $RADIUS m"
+echo "  Radius Parameter: $RADIUS m"
+echo "  Trajectory Speed: $TRAJECTORY_SPEED m/s (Blue reference path speed)"
+echo "  Max Robot Velocity: $MAX_LINEAR_VEL m/s"
+echo "  Publish Rate: 20 Hz (FIXED for real-time)"
+echo "  Plotter Update: 40 Hz (FIXED for smooth visualization)"
+echo "  Enable Trajectory Publish: $ENABLE_TRAJ_PUBLISH"
+echo "  Verbose Logging: $VERBOSE_LOGGING"
 echo ""
 
 # Export all variables so they are available in gnome-terminal subprocesses
@@ -187,6 +227,10 @@ export WORLD
 export MAP_NAME
 export TRAJECTORY_TYPE
 export RADIUS
+export TRAJECTORY_SPEED
+export MAX_LINEAR_VEL
+export ENABLE_TRAJ_PUBLISH
+export VERBOSE_LOGGING
 
 # Create temporary directory for launch scripts
 TMP_DIR="/tmp/ros2_sim_$$"
@@ -198,7 +242,7 @@ cat > "$TMP_DIR/launch_gazebo.sh" << EOFGAZEBO
 exec 2>&1  # Redirect stderr to stdout
 echo "=== Starting Gazebo Simulation ==="
 echo "X_POS=$X_POS, Y_POS=$Y_POS, WORLD=$WORLD"
-cd ~/ros2_ws || exit 1
+cd /home/thuong/ros2_ws || exit 1
 source install/setup.bash || { echo "Failed to source workspace"; exec bash; }
 echo "Launching: ros2 launch mobile_robot launch_sim.launch.py x_pos:=$X_POS y_pos:=$Y_POS world:=$WORLD"
 ros2 launch mobile_robot launch_sim.launch.py x_pos:=$X_POS y_pos:=$Y_POS world:=$WORLD
@@ -215,7 +259,7 @@ cat > "$TMP_DIR/launch_localization.sh" << EOFLOCAL
 exec 2>&1  # Redirect stderr to stdout
 echo "=== Starting Global Localization ==="
 echo "X_POS=$X_POS, Y_POS=$Y_POS, MAP_NAME=$MAP_NAME"
-cd ~/ros2_ws || exit 1
+cd /home/thuong/ros2_ws || exit 1
 source install/setup.bash || { echo "Failed to source workspace"; exec bash; }
 echo "Launching: ros2 launch agv_localization global_localization.launch.py x_pos:=$X_POS y_pos:=$Y_POS map_name:=$MAP_NAME"
 ros2 launch agv_localization global_localization.launch.py x_pos:=$X_POS y_pos:=$Y_POS map_name:=$MAP_NAME
@@ -232,10 +276,12 @@ cat > "$TMP_DIR/launch_trajectory.sh" << EOFTRAJ
 exec 2>&1  # Redirect stderr to stdout
 echo "=== Starting Trajectory Tracking ==="
 echo "TRAJECTORY_TYPE=$TRAJECTORY_TYPE, X_POS=$X_POS, Y_POS=$Y_POS, RADIUS=$RADIUS"
-cd ~/ros2_ws || exit 1
+echo "TRAJECTORY_SPEED=$TRAJECTORY_SPEED m/s, MAX_LINEAR_VEL=$MAX_LINEAR_VEL m/s"
+echo "ENABLE_TRAJ_PUBLISH=$ENABLE_TRAJ_PUBLISH, VERBOSE_LOGGING=$VERBOSE_LOGGING"
+cd /home/thuong/ros2_ws || exit 1
 source install/setup.bash || { echo "Failed to source workspace"; exec bash; }
-echo "Launching: ros2 launch agv_trajectory_tracking trajectory_tracking.launch.py trajectory_type:=$TRAJECTORY_TYPE center_x:=$X_POS center_y:=$Y_POS radius:=$RADIUS"
-ros2 launch agv_trajectory_tracking trajectory_tracking.launch.py trajectory_type:=$TRAJECTORY_TYPE center_x:=$X_POS center_y:=$Y_POS radius:=$RADIUS
+echo "Launching: ros2 launch agv_trajectory_tracking trajectory_tracking.launch.py trajectory_type:=$TRAJECTORY_TYPE center_x:=$X_POS center_y:=$Y_POS radius:=$RADIUS trajectory_speed:=$TRAJECTORY_SPEED max_linear_vel:=$MAX_LINEAR_VEL enable_traj_publish:=$ENABLE_TRAJ_PUBLISH verbose_logging:=$VERBOSE_LOGGING"
+ros2 launch agv_trajectory_tracking trajectory_tracking.launch.py trajectory_type:=$TRAJECTORY_TYPE center_x:=$X_POS center_y:=$Y_POS radius:=$RADIUS trajectory_speed:=$TRAJECTORY_SPEED max_linear_vel:=$MAX_LINEAR_VEL enable_traj_publish:=$ENABLE_TRAJ_PUBLISH verbose_logging:=$VERBOSE_LOGGING
 EXIT_CODE=\$?
 echo ""
 echo "=== Trajectory tracking terminated with exit code: \$EXIT_CODE ==="

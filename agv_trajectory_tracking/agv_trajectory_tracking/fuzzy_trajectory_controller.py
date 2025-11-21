@@ -102,6 +102,10 @@ class FuzzyTrajectoryController(Node):
         # Shutdown flag
         self.is_shutdown = False
         
+        # 🚀 CRITICAL: Wait for trajectory before controlling
+        self.startup_delay = 4.0  # seconds - Wait for trajectory publisher to start
+        self.controller_ready = False
+        
         # ROS2 interfaces
         self.cmd_vel_pub = self.create_publisher(TwistStamped, '/diff_cont/cmd_vel', 10)
         
@@ -118,11 +122,21 @@ class FuzzyTrajectoryController(Node):
         self.setup_fuzzy_system()
         self.get_logger().info('Fuzzy system ready!')
         
+        # Startup timer (one-shot)
+        self.startup_timer = self.create_timer(self.startup_delay, self.on_controller_ready)
+        
         # Control timer
         timer_period = 1.0 / self.control_freq
         self.control_timer = self.create_timer(timer_period, self.control_loop)
         
         self.get_logger().info('Controller started (Pure Python Fuzzy - Sugeno Method)!')
+        self.get_logger().info(f'⏳ Waiting {self.startup_delay}s for trajectory to be ready...')
+    
+    def on_controller_ready(self):
+        """Called after startup delay - start controlling"""
+        self.controller_ready = True
+        self.startup_timer.cancel()
+        self.get_logger().info('✅ Controller ready! Waiting for trajectory data...')
     
     def stop_robot(self):
         """Stop the robot by sending zero velocity"""
@@ -164,16 +178,16 @@ class FuzzyTrajectoryController(Node):
             'PB': ('trap', [40, 60, 180, 180])       # Positive Big: >40° - wider range
         }
         
-        # 🔧 TUNED v8: AGGRESSIVE angular velocity for SQUARE corners
-        # Much stronger rotation for 90° corners
+        # 🔧 TUNED v11: SMOOTH angular velocity for Figure-8
+        # Lower values for smoother curves, boosted by 1.4x in corner mode if needed
         self.angular_vel_constants = {
-            'NB': -1.5,    # Turn VERY hard left - max for 90° corners
-            'NM': -0.9,    # Turn medium-strong left
-            'NS': -0.4,    # Turn soft left
+            'NB': -1.2,    # Turn hard left - smooth but effective
+            'NM': -0.7,    # Turn medium left
+            'NS': -0.35,   # Turn soft left
             'Z': 0.0,      # Straight
-            'PS': 0.4,     # Turn soft right
-            'PM': 0.9,     # Turn medium-strong right
-            'PB': 1.5,     # Turn VERY hard right - max for 90° corners
+            'PS': 0.35,    # Turn soft right
+            'PM': 0.7,     # Turn medium right
+            'PB': 1.2,     # Turn hard right - smooth but effective
         }
         
         # 🚀 NEW: Fuzzy rule table for angular velocity based on angle error ONLY
@@ -229,49 +243,55 @@ class FuzzyTrajectoryController(Node):
         else:
             omega = 0.0
         
-        # 🚀 TUNED v8: IMPROVED velocity for SQUARE corners
-        # Key insight: Must SLOW DOWN or STOP at 90° corners to allow rotation!
+        # 🚀 TUNED v9: INTELLIGENT corner vs curve detection
+        # Key: Distinguish SHARP CORNERS (Square) from SMOOTH CURVES (Figure-8)
         
         abs_angle = abs(e_theta_deg)
         
-        # 🔥 CORNER DETECTION: Detect sharp 90° corners (typical in square trajectory)
-        is_sharp_corner = abs_angle > 75  # Detect corners near 90°
+        # 🔥 SMART DETECTION: Sharp corner = high angle + close distance
+        # This prevents false positives on smooth curves
+        is_sharp_corner = (abs_angle > 75 and e_d < 0.4)  # Must be NEAR corner with high angle
         
         if is_sharp_corner:
-            # 🎯 CORNER MODE: Prioritize rotation over forward motion
+            # 🎯 SHARP CORNER MODE (Square trajectory)
             # Stop or crawl forward while rotating at corner
             if e_d < 0.15:  # Very close to corner point
                 v = 0.08  # Almost stop - just rotate in place
-            elif e_d < 0.35:  # Near corner
+            elif e_d < 0.30:  # Near corner
                 v = 0.12  # Crawl forward slowly while turning
-            else:  # Approaching corner from distance
-                v = 0.18  # Slow approach to corner
+            else:  # Approaching corner
+                v = 0.16  # Slow approach to corner
             
             # 🔥 BOOST angular velocity for sharp corners
-            omega = omega * 1.3  # Increase rotation speed by 30%
+            omega = omega * 1.4  # Increase rotation speed by 40%
             
         else:
-            # 🎯 NORMAL MODE: Standard tracking for straight/gentle curves
-            # Base linear velocity - balanced for most situations
-            if e_d < 0.08:  # Very close - slow down to avoid overshoot
-                v_base = 0.30
-            elif e_d < 0.25:  # Close - steady tracking speed
-                v_base = 0.32 + 0.24 * e_d  # 0.32 to 0.38 m/s
-            elif e_d < 0.6:  # Medium distance - increase speed
-                v_base = 0.36 + 0.10 * e_d  # 0.36 to 0.42 m/s
-            else:  # Far - max tracking speed
-                v_base = 0.45  # Cap at 0.45 m/s for stable tracking
+            # 🎯 SMOOTH CURVE MODE (Circle, Figure-8, Straights)
+            # 🔥 v11: CONSTANT velocity strategy for Figure-8 - prioritize smoothness
+            # Use mostly constant speed with minimal angle-based reduction
             
-            # 🔧 SMOOTH velocity adaptation for gentle curves
-            # Gradual reduction based on angle error
-            if abs_angle < 10:  # Near straight - full speed
+            # Base velocity depends on distance - but keep range TIGHT
+            if e_d < 0.10:  # Very close
+                v_base = 0.32
+            elif e_d < 0.25:  # Close to medium - optimal range
+                v_base = 0.33
+            elif e_d < 0.50:  # Medium distance
+                v_base = 0.34
+            else:  # Far - need to catch up a bit
+                v_base = 0.35
+            
+            # 🔧 MINIMAL angle-based reduction - keep velocity smooth
+            # Figure-8 needs consistent speed for smooth tracking
+            if abs_angle < 15:  # Near straight - full speed
                 angle_factor = 1.0
-            elif abs_angle < 30:  # Gentle curve - minimal reduction
-                angle_factor = 0.95
-            elif abs_angle < 55:  # Medium curve - moderate reduction
+            elif abs_angle < 35:  # Gentle curve - tiny reduction
+                angle_factor = 0.97
+            elif abs_angle < 55:  # Medium curve - small reduction
+                angle_factor = 0.94
+            elif abs_angle < 70:  # Sharper curve - moderate reduction
+                angle_factor = 0.90
+            else:  # Very sharp curve (but still smooth, not corner)
                 angle_factor = 0.85
-            else:  # Sharper curve (55-75°) - more reduction
-                angle_factor = 0.70
             
             v = v_base * angle_factor
         
@@ -302,28 +322,64 @@ class FuzzyTrajectoryController(Node):
         self.get_logger().info(f'Trajectory: {len(msg.poses)} points')
     
     def find_closest_point(self, path, x, y):
-        """Find closest point on path ahead of robot"""
+        """Find closest point on path AHEAD of robot (critical for Figure-8 crossover)"""
         min_dist = float('inf')
         closest_idx = 0
         
-        # First, find the actual closest point
+        # 🔥 v10: CRITICAL FIX for Figure-8 crossover point
+        # First pass: Find closest point that is AHEAD of robot
+        best_idx = -1
+        best_dist = float('inf')
+        
         for i, pose_stamped in enumerate(path.poses):
             pose = pose_stamped.pose.position
             dist = math.sqrt((pose.x - x)**2 + (pose.y - y)**2)
-            if dist < min_dist:
-                min_dist = dist
-                closest_idx = i
+            
+            # Calculate if point is ahead of robot
+            dx = pose.x - x
+            dy = pose.y - y
+            angle_to_point = math.atan2(dy, dx)
+            angle_diff = angle_to_point - self.robot_theta
+            
+            # Normalize angle difference
+            while angle_diff > math.pi:
+                angle_diff -= 2.0 * math.pi
+            while angle_diff < -math.pi:
+                angle_diff += 2.0 * math.pi
+            
+            # Point is "ahead" if angle difference is within [-90°, +90°]
+            is_ahead = abs(angle_diff) < math.pi / 2.0
+            
+            # Prefer points ahead, but if robot is far off track, accept any closest
+            if is_ahead or dist < 0.3:  # Accept close points even if behind
+                if dist < best_dist:
+                    best_dist = dist
+                    best_idx = i
         
-        # 🔧 IMPROVED v8: SMARTER lookahead - minimal for tight corners
-        # Reduced lookahead to track corners more precisely
-        if min_dist < 0.10:  # Very close to path - MINIMAL lookahead
-            lookahead_points = 2  # Almost no lookahead for tight tracking
-        elif min_dist < 0.25:  # Close - small lookahead
-            lookahead_points = 3  # Stay close to path
-        elif min_dist < 0.5:  # Moderate distance
-            lookahead_points = 5  # Balance tracking
-        else:  # Far from path - larger lookahead
-            lookahead_points = 8  # Get back to path
+        # Fallback: if no ahead point found (shouldn't happen), use absolute closest
+        if best_idx == -1:
+            for i, pose_stamped in enumerate(path.poses):
+                pose = pose_stamped.pose.position
+                dist = math.sqrt((pose.x - x)**2 + (pose.y - y)**2)
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_idx = i
+            best_idx = closest_idx
+            best_dist = min_dist
+        
+        closest_idx = best_idx
+        min_dist = best_dist
+        
+        # 🔧 IMPROVED v11: MODERATE lookahead for smooth tracking
+        # With ahead detection, we can safely use more lookahead
+        if min_dist < 0.10:  # Very close to path
+            lookahead_points = 4  # Small lookahead for smooth following
+        elif min_dist < 0.20:  # Close
+            lookahead_points = 5  # Moderate lookahead
+        elif min_dist < 0.40:  # Medium distance
+            lookahead_points = 6  # More lookahead
+        else:  # Far from path
+            lookahead_points = 7  # Larger lookahead to catch up
         
         target_idx = min(closest_idx + lookahead_points, len(path.poses) - 1)
         
@@ -413,6 +469,10 @@ class FuzzyTrajectoryController(Node):
     
     def control_loop(self):
         """Main control loop"""
+        # 🚀 CRITICAL: Wait for startup delay before controlling
+        if not self.controller_ready:
+            return
+        
         # Check if shutting down
         if self.is_shutdown:
             return
