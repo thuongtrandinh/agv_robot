@@ -322,7 +322,7 @@ Visualization Manager:
       Name: ParticleCloud
       Shape: Arrow (Flat)
       Topic:
-        Depth: 100
+        Depth: 200
         Durability Policy: Volatile
         Filter size: 10
         History Policy: Keep Last
