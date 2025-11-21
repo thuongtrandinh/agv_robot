@@ -145,35 +145,35 @@ class FuzzyTrajectoryController(Node):
         # 🔧 IMPROVED v2: Even tighter distance MFs for aggressive tracking
         # More responsive to small errors
         self.e_d_mf = {
-            'VS': ('trap', [0, 0, 0.2, 0.5]),      # Very Small: 0-0.5m
-            'S': ('tri', [0.2, 0.6, 1.2]),         # Small: 0.2-1.2m
-            'M': ('tri', [0.6, 1.5, 2.5]),         # Medium: 0.6-2.5m
-            'B': ('tri', [1.5, 3.0, 4.5]),         # Big: 1.5-4.5m
-            'VB': ('trap', [3.0, 5.0, 10, 20]),    # Very Big: >3.0m
+            'VS': ('trap', [0, 0, 0.5, 0.8]),      # Very Small: 0-0.5m
+            'S': ('tri', [0.5, 0.8, 1.2]),         # Small: 0.2-1.2m
+            'M': ('tri', [0.8, 1.2, 1.5]),         # Medium: 0.6-2.5m
+            'B': ('tri', [1.2, 1.5, 3.0]),         # Big: 1.5-4.5m
+            'VB': ('trap', [1.5, 3.0, 10, 20]),    # Very Big: >3.0m
         }
         
         # 🔧 TUNED v5: BALANCED angle thresholds for all trajectory types
         # Works well for sharp corners (Square) and smooth curves (Figure-8)
         self.e_theta_mf = {
-            'NB': ('trap', [-180, -180, -60, -40]),  # Negative Big: <-40° - wider range
-            'NM': ('tri', [-60, -35, -18]),          # Negative Medium: -60 to -18°
-            'NS': ('tri', [-28, -12, -4]),           # Negative Small: -28 to -4°
-            'ZE': ('tri', [-6, 0, 6]),               # Zero: -6 to 6° - balanced tolerance
-            'PS': ('tri', [4, 12, 28]),              # Positive Small: 4 to 28°
-            'PM': ('tri', [18, 35, 60]),             # Positive Medium: 18 to 60°
-            'PB': ('trap', [40, 60, 180, 180])       # Positive Big: >40° - wider range
+            'NB': ('trap', [-180, -180, -30, -15]),  # Negative Big: <-40° - wider range
+            'NM': ('tri', [-30, -15, -5]),          # Negative Medium: -60 to -18°
+            'NS': ('tri', [-15, -5, -3]),           # Negative Small: -28 to -4°
+            'ZE': ('tri', [-3, 0, 3]),               # Zero: -6 to 6° - balanced tolerance
+            'PS': ('tri', [3, 5, 15]),              # Positive Small: 4 to 28°
+            'PM': ('tri', [5, 15, 30]),             # Positive Medium: 18 to 60°
+            'PB': ('trap', [15, 30, 180, 180])       # Positive Big: >40° - wider range
         }
         
         # 🔧 TUNED v8: AGGRESSIVE angular velocity for SQUARE corners
         # Much stronger rotation for 90° corners
         self.angular_vel_constants = {
-            'NB': -1.5,    # Turn VERY hard left - max for 90° corners
+            'NB': -1.2,    # Turn VERY hard left - max for 90° corners
             'NM': -0.9,    # Turn medium-strong left
-            'NS': -0.4,    # Turn soft left
+            'NS': -0.5,    # Turn soft left
             'Z': 0.0,      # Straight
-            'PS': 0.4,     # Turn soft right
+            'PS': 0.5,     # Turn soft right
             'PM': 0.9,     # Turn medium-strong right
-            'PB': 1.5,     # Turn VERY hard right - max for 90° corners
+            'PB': 1.2,     # Turn VERY hard right - max for 90° corners
         }
         
         # 🚀 NEW: Fuzzy rule table for angular velocity based on angle error ONLY
