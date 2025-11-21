@@ -100,7 +100,7 @@ echo -e "${GREEN}========================================${NC}"
 
 # Source ROS2 workspace
 echo -e "${YELLOW}Sourcing ROS2 workspace...${NC}"
-cd /home/thuong/ros2_ws
+cd ~/ros2_ws
 source install/setup.bash
 
 # Default parameters
@@ -242,7 +242,7 @@ cat > "$TMP_DIR/launch_gazebo.sh" << EOFGAZEBO
 exec 2>&1  # Redirect stderr to stdout
 echo "=== Starting Gazebo Simulation ==="
 echo "X_POS=$X_POS, Y_POS=$Y_POS, WORLD=$WORLD"
-cd /home/thuong/ros2_ws || exit 1
+cd ~/ros2_ws || exit 1
 source install/setup.bash || { echo "Failed to source workspace"; exec bash; }
 echo "Launching: ros2 launch mobile_robot launch_sim.launch.py x_pos:=$X_POS y_pos:=$Y_POS world:=$WORLD"
 ros2 launch mobile_robot launch_sim.launch.py x_pos:=$X_POS y_pos:=$Y_POS world:=$WORLD
@@ -259,7 +259,7 @@ cat > "$TMP_DIR/launch_localization.sh" << EOFLOCAL
 exec 2>&1  # Redirect stderr to stdout
 echo "=== Starting Global Localization ==="
 echo "X_POS=$X_POS, Y_POS=$Y_POS, MAP_NAME=$MAP_NAME"
-cd /home/thuong/ros2_ws || exit 1
+cd ~/ros2_ws || exit 1
 source install/setup.bash || { echo "Failed to source workspace"; exec bash; }
 echo "Launching: ros2 launch agv_localization global_localization.launch.py x_pos:=$X_POS y_pos:=$Y_POS map_name:=$MAP_NAME"
 ros2 launch agv_localization global_localization.launch.py x_pos:=$X_POS y_pos:=$Y_POS map_name:=$MAP_NAME
@@ -278,7 +278,7 @@ echo "=== Starting Trajectory Tracking ==="
 echo "TRAJECTORY_TYPE=$TRAJECTORY_TYPE, X_POS=$X_POS, Y_POS=$Y_POS, RADIUS=$RADIUS"
 echo "TRAJECTORY_SPEED=$TRAJECTORY_SPEED m/s, MAX_LINEAR_VEL=$MAX_LINEAR_VEL m/s"
 echo "ENABLE_TRAJ_PUBLISH=$ENABLE_TRAJ_PUBLISH, VERBOSE_LOGGING=$VERBOSE_LOGGING"
-cd /home/thuong/ros2_ws || exit 1
+cd ~/ros2_ws || exit 1
 source install/setup.bash || { echo "Failed to source workspace"; exec bash; }
 echo "Launching: ros2 launch agv_trajectory_tracking trajectory_tracking.launch.py trajectory_type:=$TRAJECTORY_TYPE center_x:=$X_POS center_y:=$Y_POS radius:=$RADIUS trajectory_speed:=$TRAJECTORY_SPEED max_linear_vel:=$MAX_LINEAR_VEL enable_traj_publish:=$ENABLE_TRAJ_PUBLISH verbose_logging:=$VERBOSE_LOGGING"
 ros2 launch agv_trajectory_tracking trajectory_tracking.launch.py trajectory_type:=$TRAJECTORY_TYPE center_x:=$X_POS center_y:=$Y_POS radius:=$RADIUS trajectory_speed:=$TRAJECTORY_SPEED max_linear_vel:=$MAX_LINEAR_VEL enable_traj_publish:=$ENABLE_TRAJ_PUBLISH verbose_logging:=$VERBOSE_LOGGING

@@ -181,7 +181,6 @@ class FuzzyTrajectoryController(Node):
         # 🔧 TUNED v11: SMOOTH angular velocity for Figure-8
         # Lower values for smoother curves, boosted by 1.4x in corner mode if needed
         self.angular_vel_constants = {
-<<<<<<< HEAD
             'NB': -1.2,    # Turn VERY hard left - max for 90° corners
             'NM': -0.9,    # Turn medium-strong left
             'NS': -0.5,    # Turn soft left
@@ -189,15 +188,6 @@ class FuzzyTrajectoryController(Node):
             'PS': 0.5,     # Turn soft right
             'PM': 0.9,     # Turn medium-strong right
             'PB': 1.2,     # Turn VERY hard right - max for 90° corners
-=======
-            'NB': -1.2,    # Turn hard left - smooth but effective
-            'NM': -0.7,    # Turn medium left
-            'NS': -0.35,   # Turn soft left
-            'Z': 0.0,      # Straight
-            'PS': 0.35,    # Turn soft right
-            'PM': 0.7,     # Turn medium right
-            'PB': 1.2,     # Turn hard right - smooth but effective
->>>>>>> origin/debug_Thuong_fuzzy_trajectory
         }
         
         # 🚀 NEW: Fuzzy rule table for angular velocity based on angle error ONLY
