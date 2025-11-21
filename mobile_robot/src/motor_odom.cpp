@@ -15,8 +15,8 @@ public:
     // Parameters (tune as needed)
     this->declare_parameter<double>("wheel_radius", 0.05);
     this->declare_parameter<double>("wheel_separation", 0.46);
-    this->declare_parameter<int>("left_index", 1);
-    this->declare_parameter<int>("right_index", 0);
+    this->declare_parameter<int>("left_index", 0);
+    this->declare_parameter<int>("right_index", 1);
     this->declare_parameter<bool>("feedback_is_linear_velocity", true);
     // New param: odom publish rate (Hz)
     this->declare_parameter<double>("odom_publish_rate", 13.0);
@@ -59,7 +59,7 @@ public:
     resetOdometry();
 
     RCLCPP_INFO(this->get_logger(),
-                "motor_odom started. motor_topic: %s  imu_topic: %s  (motor_feedback format: [right, left], left_index=%d right_index=%d)",
+                "motor_odom started. motor_topic: %s  imu_topic: %s  (motor_feedback format: [left, right], left_index=%d right_index=%d)",
                 motor_topic.c_str(), imu_topic.c_str(), left_idx_, right_idx_);
   }
 
@@ -185,7 +185,7 @@ private:
   // parameters/state
   double wheel_radius_{0.05};
   double wheel_separation_{0.46};
-  int left_idx_{1}, right_idx_{0};  // default mapping: motor_feedback[0]=right, [1]=left
+  int left_idx_{0}, right_idx_{1};  // default mapping: motor_feedback[0]=left, [1]=right
   bool feedback_linear_{true};
 
   double x_{0.0}, y_{0.0}, yaw_{0.0};
