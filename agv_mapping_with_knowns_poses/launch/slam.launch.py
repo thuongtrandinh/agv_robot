@@ -7,18 +7,17 @@ from launch.substitutions import LaunchConfiguration
 
 
 def generate_launch_description():
-
-    use_sim_time = LaunchConfiguration("use_sim_time")
+    use_sim_time = LaunchConfiguration("use_sim_time", default="false")
     slam_config = LaunchConfiguration("slam_config")
 
-    ros_distro = os.environ["ROS_DISTRO"]
+    ros_distro = os.environ.get("ROS_DISTRO", "humble")
     lifecycle_nodes = ["map_saver_server"]
     if ros_distro != "humble":
         lifecycle_nodes.append("slam_toolbox")
 
     use_sim_time_arg = DeclareLaunchArgument(
         "use_sim_time",
-        default_value="true",
+        default_value="false",
         description="Use simulation time if true"
     )
 
@@ -32,19 +31,14 @@ def generate_launch_description():
         description="Full path to slam yaml file to load"
     )
     
-    # ==========================================
-    # SENSOR FUSION: EKF for reducing odometry drift
-    # ==========================================
-    # Pipeline: [IMU + Encoder] → EKF → /odometry/filtered → SLAM Toolbox
-    
+    # EKF config
     ekf_config_file = os.path.join(
         get_package_share_directory("agv_localization"),
         "config",
         "ekf.yaml"
     )
     
-    # 1. IMU Republisher - Add covariance to Gazebo IMU
-    # TUNED: High covariance to reduce jerky motion during SLAM
+    # IMU Republisher (reduced covariance for stability)
     imu_republisher = Node(
         package="agv_localization",
         executable="imu_republisher",
@@ -54,14 +48,13 @@ def generate_launch_description():
             {"use_sim_time": use_sim_time},
             {"input_topic": "/imu"},
             {"output_topic": "/imu_with_covariance"},
-            {"orientation_covariance": 0.1},            # Increased from 0.05
-            {"angular_velocity_covariance": 0.15},      # Increased from 0.08
-            {"linear_acceleration_covariance": 0.25}    # Increased from 0.15
+            {"orientation_covariance": 0.08},
+            {"angular_velocity_covariance": 0.12},
+            {"linear_acceleration_covariance": 0.20}
         ]
     )
     
-    # 2. Odometry Republisher - Add covariance to wheel odometry
-    # TUNED: High covariance to reduce jerky motion during SLAM
+    # Odometry Republisher (reduced covariance for stability)
     odom_republisher = Node(
         package="agv_localization",
         executable="odom_republisher",
@@ -71,16 +64,16 @@ def generate_launch_description():
             {"use_sim_time": use_sim_time},
             {"input_topic": "/diff_cont/odom"},
             {"output_topic": "/diff_cont/odom_with_covariance"},
-            {"pose_x_covariance": 0.05},                # Increased from 0.01
-            {"pose_y_covariance": 0.05},                # Increased from 0.01
-            {"pose_yaw_covariance": 0.1},               # Increased from 0.05
-            {"twist_vx_covariance": 0.05},              # Increased from 0.01
-            {"twist_vy_covariance": 0.05},              # Increased from 0.01
-            {"twist_vyaw_covariance": 0.1}              # Increased from 0.05
+            {"pose_x_covariance": 0.03},
+            {"pose_y_covariance": 0.03},
+            {"pose_yaw_covariance": 0.08},
+            {"twist_vx_covariance": 0.03},
+            {"twist_vy_covariance": 0.03},
+            {"twist_vyaw_covariance": 0.08}
         ]
     )
     
-    # 3. EKF Node - Fuse IMU + Encoder to reduce drift
+    # EKF Node (reduced frequency to match odom rate)
     ekf_filter = Node(
         package="robot_localization",
         executable="ekf_node",
@@ -88,15 +81,12 @@ def generate_launch_description():
         output="screen",
         parameters=[
             ekf_config_file,
-            {"use_sim_time": use_sim_time}
+            {"use_sim_time": use_sim_time},
+            {"frequency": 15.0}  # Match motor_odom rate
         ]
-        # Publishes /odometry/filtered (much better than raw encoder!)
     )
     
-    # ==========================================
-    # SLAM NODES
-    # ==========================================
-    
+    # Map Saver
     nav2_map_saver = Node(
         package="nav2_map_server",
         executable="map_saver_server",
@@ -110,9 +100,9 @@ def generate_launch_description():
         ],
     )
 
-    # Add a delay to ensure transforms and sensor data are initialized
-    slam_toolbox = TimerAction(
-        period=5.0,  # Delay for 5 seconds
+    # SLAM Toolbox (delayed to ensure /scan and TF are stable)
+    slam_toolbox_delayed = TimerAction(
+        period=5.0,
         actions=[
             Node(
                 package="slam_toolbox",
@@ -121,21 +111,17 @@ def generate_launch_description():
                 output="screen",
                 parameters=[
                     slam_config,
-                    {"use_sim_time": use_sim_time},
-                    {"queue_size": 50}  # Increase queue size to prevent message drops
+                    {"use_sim_time": use_sim_time}
                 ],
                 remappings=[
-                    # CRITICAL: Use filtered odometry instead of raw /odom
                     ("/odom", "/odometry/filtered"),
+                    ("/scan", "/scan")  # Use throttled scan
                 ]
             )
         ]
     )
 
-    # ============================
-    #  ArUco Mapper (from agv_zed2)
-    #  Saves discovered markers to agv_mapping_with_knowns_poses/maps
-    # ============================
+    # ArUco Mapper
     aruco_mapper = Node(
         package="agv_zed2",
         executable="aruco_mapper",
@@ -152,6 +138,7 @@ def generate_launch_description():
         ],
     )
 
+    # Lifecycle Manager
     nav2_lifecycle_manager = Node(
         package="nav2_lifecycle_manager",
         executable="lifecycle_manager",
@@ -164,37 +151,14 @@ def generate_launch_description():
         ],
     )
 
-    # Add a delay to AMCL initialization
-    amcl_node = TimerAction(
-        period=5.0,  # Delay for 5 seconds
-        actions=[
-            Node(
-                package="nav2_amcl",
-                executable="amcl",
-                name="amcl",
-                output="screen",
-                parameters=[
-                    {"use_sim_time": use_sim_time},
-                    {"initial_pose_x": 0.0},
-                    {"initial_pose_y": 0.0},
-                    {"initial_pose_a": 3.14159},  # Set RPY yaw to Pi
-                ]
-            )
-        ]
-    )
-
-    # Ensure EKF and SLAM Toolbox are initialized first
-    nodes = [
+    return LaunchDescription([
         use_sim_time_arg,
         slam_config_arg,
         imu_republisher,
         odom_republisher,
         ekf_filter,
-        slam_toolbox,
-        amcl_node,
         nav2_map_saver,
+        slam_toolbox_delayed,
         aruco_mapper,
         nav2_lifecycle_manager,
-    ]
-
-    return LaunchDescription(nodes)
+    ])

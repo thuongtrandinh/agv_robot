@@ -23,14 +23,14 @@ class AgvIrttStarNode(Node):
         # =======================
         # Tham số ROS 2
         # =======================
-        self.declare_parameter('max_iter', 3000)
-        self.declare_parameter('step_len', 0.2)
-        self.declare_parameter('goal_sample_rate', 0.1)
-        self.declare_parameter('search_radius', 2.0)
+        self.declare_parameter('max_iter', 2000)
+        self.declare_parameter('step_len', 0.15)
+        self.declare_parameter('goal_sample_rate', 0.15)
+        self.declare_parameter('search_radius', 1.0)
         self.declare_parameter('path_resolution', 0.1)
         self.declare_parameter('enable_smoothing', True)
-        self.declare_parameter('robot_radius', 0.6)      # giống footprint radius
-        self.declare_parameter('safety_margin', 0.1)     # giống inflation thêm
+        self.declare_parameter('robot_radius', 0.25)     # giảm mạnh cho map 5x10m
+        self.declare_parameter('safety_margin', 0.01)    # giảm mạnh inflation
         self.declare_parameter('alpha', 2.0)
 
 
@@ -127,6 +127,11 @@ class AgvIrttStarNode(Node):
             free_xs * self.map_res + self.map_origin.x,
             free_ys * self.map_res + self.map_origin.y
         ], axis=1)
+        
+        total_cells = self.map_width * self.map_height
+        free_cells = len(free_ys)
+        occupied_ratio = 100.0 * (1 - free_cells / total_cells)
+        self.get_logger().info(f"📊 Map stats: {free_cells}/{total_cells} free cells ({occupied_ratio:.1f}% occupied after inflation)")
 
     # ============================================
     # ODOM CALLBACK
@@ -184,7 +189,16 @@ class AgvIrttStarNode(Node):
         _, _, self.goal_yaw = self.quaternion_to_euler(msg.pose.orientation)
 
         self.get_logger().info(f"🎯 Planning from {self.start} to {self.goal}")
-
+        
+        # Kiểm tra start/goal có hợp lệ không
+        if self.is_collision(self.start):
+            self.get_logger().error(f"❌ START position {self.start} is in collision! Cannot plan.")
+            return
+        if self.is_collision(self.goal):
+            self.get_logger().error(f"❌ GOAL position {self.goal} is in collision! Cannot plan.")
+            return
+        
+        self.get_logger().info("✅ Start and goal are collision-free")
         self.run_planner()
 
     # ============================================

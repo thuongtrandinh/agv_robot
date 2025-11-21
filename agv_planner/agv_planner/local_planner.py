@@ -42,7 +42,7 @@ class HybridLocalPlanner(Node):
         self.declare_parameter('control_rate', 20.0)  # Hz
 
         # Geometry
-        self.declare_parameter('robot_radius', 0.35)  # m (half width)
+        self.declare_parameter('robot_radius', 0.25)  # m (half width)
 
         # Path tracking gains (gần giống MATLAB)
         self.declare_parameter('track.k_p', 1.8)

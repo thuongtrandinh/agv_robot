@@ -159,16 +159,10 @@ private:
     if (odom_publish_period_.seconds() <= 0.0 || (now - last_pub_time_) >= odom_publish_period_) {
       odom_pub_->publish(odom);
 
-      // Broadcast TF odom -> base
-      geometry_msgs::msg::TransformStamped t;
-      t.header.stamp = now;
-      t.header.frame_id = odom_frame_;
-      t.child_frame_id = base_frame_;
-      t.transform.translation.x = x_;
-      t.transform.translation.y = y_;
-      t.transform.translation.z = 0.0;
-      t.transform.rotation = odom.pose.pose.orientation;
-      tf_broadcaster_->sendTransform(t);
+      // TF broadcast DISABLED - EKF will publish odom->base_footprint
+      // Reason: Avoid conflict between motor_odom and ekf_filter_node
+      // motor_odom only provides raw odometry data to /diff_cont/odom
+      // EKF fuses /diff_cont/odom + /imu → /odometry/filtered + TF
 
       // update last publish time
       last_pub_time_ = now;

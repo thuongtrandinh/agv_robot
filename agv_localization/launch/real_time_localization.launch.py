@@ -33,14 +33,18 @@ def launch_setup(context, *args, **kwargs):
         "lab208b3.yaml"
     ])
 
-    # Static transform to align map and odom frames at startup
-    static_transform = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name="map_to_odom_publisher",
-        arguments=["0", "0", "0", "0", "0", "-1.5708", "map", "odom"],
-        parameters=[{"use_sim_time": use_sim_time}],
-        output="screen"
+    # EKF for sensor fusion (reduced frequency)
+    ekf_config_file = os.path.join(pkg_dir, "config", "ekf.yaml")
+    ekf_node = Node(
+        package="robot_localization",
+        executable="ekf_node",
+        name="ekf_filter_node",
+        output="screen",
+        parameters=[
+            ekf_config_file,
+            {"use_sim_time": use_sim_time},
+            {"frequency": 15.0}  # Match motor_odom rate
+        ],
     )
     
     nav2_map_server = Node(
@@ -56,7 +60,7 @@ def launch_setup(context, *args, **kwargs):
 
     # Delay AMCL activation to ensure transforms are available
     amcl_delayed = TimerAction(
-        period=8.0,  # Delay AMCL activation by 8 seconds
+        period=4.0,  # Delay AMCL activation by 4 seconds
         actions=[
             Node(
                 package="nav2_amcl",
@@ -66,10 +70,8 @@ def launch_setup(context, *args, **kwargs):
                 parameters=[
                     amcl_config_file,
                     {"use_sim_time": use_sim_time},
-                    {"scan_topic": "/scan"},
-                    {"scan_queue_size": 50},
                 ],
-                remappings=[("/scan", "/scan")]
+                remappings=[("/scan", "/scan")]  # Use throttled scan
             )
         ]
     )
@@ -87,7 +89,7 @@ def launch_setup(context, *args, **kwargs):
     )
 
     return [
-        static_transform,
+        ekf_node,
         nav2_map_server,
         amcl_delayed,
         lifecycle

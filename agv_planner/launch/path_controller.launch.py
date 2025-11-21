@@ -29,12 +29,14 @@ def generate_launch_description():
                 output='screen',
                 parameters=[
                     {'use_sim_time': LaunchConfiguration('use_sim_time')},
-                    {'max_iter': 3000},
-                    {'step_len': 0.5},
-                    {'goal_sample_rate': 0.1},
-                    {'search_radius': 2.0},
+                    {'max_iter': 2000},
+                    {'step_len': 0.15},
+                    {'goal_sample_rate': 0.15},
+                    {'search_radius': 1.0},
                     {'enable_smoothing': True},
                     {'path_resolution': 0.1},
+                    {'robot_radius': 0.25},
+                    {'safety_margin': 0.05},
                 ]
             )
         ]
@@ -54,23 +56,23 @@ def generate_launch_description():
                 parameters=[
                     {'use_sim_time': LaunchConfiguration('use_sim_time')},
                     # Velocity limits
-                    {'max_v': 1.0},
-                    {'max_w': 1.0},
-                    {'max_accel': 1.0},
-                    {'max_decel': 3.0},
-                    {'max_angular_accel': 3.0},
+                    {'max_v': 0.8},
+                    {'max_w': 0.8},
+                    {'max_accel': 0.8},
+                    {'max_decel': 2.0},
+                    {'max_angular_accel': 2.0},
                     {'control_rate': 20.0},
                     # Robot geometry
-                    {'robot_radius': 0.35},
+                    {'robot_radius': 0.25},
                     # Tracking gains
-                    {'track.k_p': 1.8},
-                    {'track.k_d': 2.5},
-                    {'track.k_w': 0.4},
+                    {'track.k_p': 1.5},
+                    {'track.k_d': 2.0},
+                    {'track.k_w': 0.5},
                     # Braking parameters
-                    {'brake.start_dist': 2.0},
+                    {'brake.start_dist': 1.0},
                     {'brake.safety_factor': 0.6},
                     # Goal region
-                    {'goal.capture_radius': 0.8},
+                    {'goal.capture_radius': 0.5},
                 ]
             )
         ]
