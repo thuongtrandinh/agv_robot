@@ -11,7 +11,6 @@ import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseWithCovarianceStamped
-from nav_msgs.msg import Odometry
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.patches import Circle
@@ -28,10 +27,19 @@ class TrajectoryPlotter(Node):
         
         # Parameters
         self.declare_parameter('max_history', 2000)
-        self.declare_parameter('update_interval', 20)  # ms
+        self.declare_parameter('update_interval', 50)  # ms - Plot update rate (default: 50ms = 20Hz)
+        self.declare_parameter('publish_rate', 10.0)   # Hz - Trajectory publish rate for reference
         
         self.max_history = self.get_parameter('max_history').value
         self.update_interval = self.get_parameter('update_interval').value
+        self.publish_rate = self.get_parameter('publish_rate').value
+        
+        # Auto-adjust update interval based on publish rate for real-time plotting
+        # Update at least 2x faster than publish rate for smooth visualization
+        recommended_interval = int(1000.0 / (self.publish_rate * 2))  # ms
+        if self.update_interval > recommended_interval:
+            self.update_interval = recommended_interval
+            self.get_logger().info(f'⚡ Auto-adjusted plot update interval to {self.update_interval}ms for smooth real-time visualization')
         
         # Data storage
         self.ref_x = []
@@ -45,21 +53,36 @@ class TrajectoryPlotter(Node):
         self.last_ref_point = None
         self.last_actual_point = None
         
+        # Ready flag - ensure subscribers are ready before data arrives
+        self.is_ready = False
+        self.data_received = False
+        
         # Subscribers
         self.ref_path_sub = self.create_subscription(
             Path, '/trajectory',
             self.reference_callback, 10)
         
         self.pose_sub = self.create_subscription(
-            Odometry, '/diff_cont/odom',
+            PoseWithCovarianceStamped, '/amcl_pose',
             self.pose_callback, 10)
         
-        # Setup matplotlib
+        # Setup matplotlib EARLY to be ready for first data
         self.setup_plots()
+        
+        # Mark as ready after a short delay to ensure ROS2 connections established
+        self.create_timer(0.5, self.mark_ready)
         
         self.get_logger().info('📊 Trajectory Plotter started!')
         self.get_logger().info(f'  Max history: {self.max_history} points')
-        self.get_logger().info(f'  Update interval: {self.update_interval} ms')
+        self.get_logger().info(f'  Update interval: {self.update_interval} ms ({1000.0/self.update_interval:.1f} Hz)')
+        self.get_logger().info(f'  Trajectory publish rate: {self.publish_rate} Hz')
+        self.get_logger().info(f'  Real-time plotting: ✓ ENABLED')
+        self.get_logger().info('⏳ Initializing subscribers...')
+    
+    def mark_ready(self):
+        """Mark plotter as ready after initialization"""
+        self.is_ready = True
+        self.get_logger().info('✅ Plotter ready! Waiting for trajectory data...')
     
     def setup_plots(self):
         """Setup matplotlib figure with 2 subplots"""
@@ -103,6 +126,13 @@ class TrajectoryPlotter(Node):
     
     def reference_callback(self, msg):
         """Store reference trajectory"""
+        if not self.is_ready:
+            return
+        
+        if not self.data_received:
+            self.data_received = True
+            self.get_logger().info('📍 First trajectory data received! Starting visualization...')
+        
         if len(msg.poses) > 0:
             # Get first point (closest to robot)
             pose = msg.poses[0].pose.position
@@ -121,27 +151,33 @@ class TrajectoryPlotter(Node):
                     self.ref_y.pop(0)
     
     def pose_callback(self, msg):
-        """Store actual robot trajectory and compute error from /odom"""
+        """Store actual robot trajectory and compute error"""
         x = msg.pose.pose.position.x
         y = msg.pose.pose.position.y
         point = (x, y)
-
+        
         # Add if different from last point
         if self.last_actual_point is None or \
            self.distance(point, self.last_actual_point) > 0.05:
             self.actual_x.append(x)
             self.actual_y.append(y)
             self.last_actual_point = point
+            
             # Limit history
             if len(self.actual_x) > self.max_history:
                 self.actual_x.pop(0)
                 self.actual_y.pop(0)
-            # Compute cross-track error
-            if len(self.ref_x) > 1:
+            
+            # 🚀 IMPROVED: Compute CROSS-TRACK ERROR (perpendicular distance to path)
+            # This is more accurate than Euclidean distance to nearest point
+            if len(self.ref_x) > 1:  # Need at least 2 points to compute cross-track
                 cross_track_error = self.compute_cross_track_error(point)
+                
                 current_time = self.get_clock().now().nanoseconds / 1e9 - self.start_time
                 self.time_stamps.append(current_time)
                 self.errors.append(cross_track_error)
+                
+                # Limit history
                 if len(self.errors) > self.max_history:
                     self.time_stamps.pop(0)
                     self.errors.pop(0)

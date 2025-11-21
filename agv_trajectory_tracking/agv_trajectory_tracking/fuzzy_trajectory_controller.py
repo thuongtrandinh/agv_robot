@@ -75,15 +75,19 @@ class FuzzyTrajectoryController(Node):
         # Parameters
         self.declare_parameter('wheel_base', 0.46)
         self.declare_parameter('max_linear_vel', 1.0)
-        self.declare_parameter('max_angular_vel', 1.0)
+        self.declare_parameter('max_angular_vel', 1.5)  # Increased from 1.0 for better corner turning
         self.declare_parameter('control_frequency', 20.0)
         self.declare_parameter('goal_tolerance', 0.15)
+        self.declare_parameter('enable_path_publish', True)  # Enable/disable path publishing
+        self.declare_parameter('verbose_logging', True)       # Enable detailed velocity logging
         
         self.wheel_base = self.get_parameter('wheel_base').value
         self.max_linear_vel = self.get_parameter('max_linear_vel').value
         self.max_angular_vel = self.get_parameter('max_angular_vel').value
         self.control_freq = self.get_parameter('control_frequency').value
         self.goal_tolerance = self.get_parameter('goal_tolerance').value
+        self.enable_path_publish = self.get_parameter('enable_path_publish').value
+        self.verbose_logging = self.get_parameter('verbose_logging').value
         
         # 🔧 CRITICAL: Maximum wheel velocity constraint (1.0 m/s per wheel)
         self.max_wheel_vel = 1.0  # m/s - hardware limit for each motor
@@ -141,33 +145,35 @@ class FuzzyTrajectoryController(Node):
         # 🔧 IMPROVED v2: Even tighter distance MFs for aggressive tracking
         # More responsive to small errors
         self.e_d_mf = {
-            'VS': ('trap', [0, 0, 0.2, 0.5]),      # Very Small: 0-0.5m
-            'S': ('tri', [0.2, 0.6, 1.2]),         # Small: 0.2-1.2m
-            'M': ('tri', [0.6, 1.5, 2.5]),         # Medium: 0.6-2.5m
-            'B': ('tri', [1.5, 3.0, 4.5]),         # Big: 1.5-4.5m
-            'VB': ('trap', [3.0, 5.0, 10, 20]),    # Very Big: >3.0m
+            'VS': ('trap', [0, 0, 0.5, 0.8]),      # Very Small: 0-0.5m
+            'S': ('tri', [0.5, 0.8, 1.2]),         # Small: 0.2-1.2m
+            'M': ('tri', [0.8, 1.2, 1.5]),         # Medium: 0.6-2.5m
+            'B': ('tri', [1.2, 1.5, 3.0]),         # Big: 1.5-4.5m
+            'VB': ('trap', [1.5, 3.0, 10, 20]),    # Very Big: >3.0m
         }
         
-        # 🔧 TUNED v3: Tighter angle thresholds for more responsive turning
+        # 🔧 TUNED v5: BALANCED angle thresholds for all trajectory types
+        # Works well for sharp corners (Square) and smooth curves (Figure-8)
         self.e_theta_mf = {
-            'NB': ('trap', [-180, -180, -45, -25]),  # Negative Big: <-25° (was -30°)
-            'NM': ('tri', [-45, -25, -10]),          # Negative Medium: -45 to -10° (tighter)
-            'NS': ('tri', [-25, -10, -2]),           # Negative Small: -25 to -2° (tighter)
-            'ZE': ('tri', [-3, 0, 3]),               # Zero: -3 to 3° (tighter tolerance)
-            'PS': ('tri', [2, 10, 25]),              # Positive Small: 2 to 25° (tighter)
-            'PM': ('tri', [10, 25, 45]),             # Positive Medium: 10 to 45° (tighter)
-            'PB': ('trap', [25, 45, 180, 180])       # Positive Big: >25° (was 30°)
+            'NB': ('trap', [-180, -180, -30, -15]),  # Negative Big: <-40° - wider range
+            'NM': ('tri', [-30, -15, -5]),          # Negative Medium: -60 to -18°
+            'NS': ('tri', [-15, -5, -3]),           # Negative Small: -28 to -4°
+            'ZE': ('tri', [-3, 0, 3]),               # Zero: -6 to 6° - balanced tolerance
+            'PS': ('tri', [3, 5, 15]),              # Positive Small: 4 to 28°
+            'PM': ('tri', [5, 15, 30]),             # Positive Medium: 18 to 60°
+            'PB': ('trap', [15, 30, 180, 180])       # Positive Big: >40° - wider range
         }
         
-        # 🔧 TUNED v3: More aggressive angular velocity for tighter curves
+        # 🔧 TUNED v8: AGGRESSIVE angular velocity for SQUARE corners
+        # Much stronger rotation for 90° corners
         self.angular_vel_constants = {
-            'NB': -1.0,    # Turn hard left (was -0.8)
-            'NM': -0.6,    # Turn medium left (was -0.5)
-            'NS': -0.3,    # Turn soft left (was -0.25)
+            'NB': -1.2,    # Turn VERY hard left - max for 90° corners
+            'NM': -0.9,    # Turn medium-strong left
+            'NS': -0.5,    # Turn soft left
             'Z': 0.0,      # Straight
-            'PS': 0.3,     # Turn soft right (was 0.25)
-            'PM': 0.6,     # Turn medium right (was 0.5)
-            'PB': 1.0,     # Turn hard right (was 0.8)
+            'PS': 0.5,     # Turn soft right
+            'PM': 0.9,     # Turn medium-strong right
+            'PB': 1.2,     # Turn VERY hard right - max for 90° corners
         }
         
         # 🚀 NEW: Fuzzy rule table for angular velocity based on angle error ONLY
@@ -223,20 +229,51 @@ class FuzzyTrajectoryController(Node):
         else:
             omega = 0.0
         
-        # 🚀 TUNED v3: Faster linear velocity for better tracking
-        # Aggressive speed profile to reduce tracking error
-        if e_d < 0.2:  # Very close - maintain minimum speed
-            v = 0.25
-        elif e_d < 0.8:  # Close - ramp up smoothly
-            v = 0.35 + 0.45 * e_d  # 0.35 to 0.71 m/s
-        elif e_d < 2.5:  # Medium distance - high speed
-            v = 0.65 + 0.2 * e_d  # 0.65 to 1.15 m/s (capped at max)
-        else:  # Far - max speed
-            v = 1.0  # Full speed
+        # 🚀 TUNED v8: IMPROVED velocity for SQUARE corners
+        # Key insight: Must SLOW DOWN or STOP at 90° corners to allow rotation!
         
-        # Reduce linear velocity when turning sharply (smoother but less aggressive)
-        angle_factor = 1.0 - 0.2 * min(abs(e_theta_deg) / 90.0, 1.0)  # Reduce up to 20% (was 30%)
-        v = v * angle_factor
+        abs_angle = abs(e_theta_deg)
+        
+        # 🔥 CORNER DETECTION: Detect sharp 90° corners (typical in square trajectory)
+        is_sharp_corner = abs_angle > 75  # Detect corners near 90°
+        
+        if is_sharp_corner:
+            # 🎯 CORNER MODE: Prioritize rotation over forward motion
+            # Stop or crawl forward while rotating at corner
+            if e_d < 0.15:  # Very close to corner point
+                v = 0.08  # Almost stop - just rotate in place
+            elif e_d < 0.35:  # Near corner
+                v = 0.12  # Crawl forward slowly while turning
+            else:  # Approaching corner from distance
+                v = 0.18  # Slow approach to corner
+            
+            # 🔥 BOOST angular velocity for sharp corners
+            omega = omega * 1.3  # Increase rotation speed by 30%
+            
+        else:
+            # 🎯 NORMAL MODE: Standard tracking for straight/gentle curves
+            # Base linear velocity - balanced for most situations
+            if e_d < 0.08:  # Very close - slow down to avoid overshoot
+                v_base = 0.30
+            elif e_d < 0.25:  # Close - steady tracking speed
+                v_base = 0.32 + 0.24 * e_d  # 0.32 to 0.38 m/s
+            elif e_d < 0.6:  # Medium distance - increase speed
+                v_base = 0.36 + 0.10 * e_d  # 0.36 to 0.42 m/s
+            else:  # Far - max tracking speed
+                v_base = 0.45  # Cap at 0.45 m/s for stable tracking
+            
+            # 🔧 SMOOTH velocity adaptation for gentle curves
+            # Gradual reduction based on angle error
+            if abs_angle < 10:  # Near straight - full speed
+                angle_factor = 1.0
+            elif abs_angle < 30:  # Gentle curve - minimal reduction
+                angle_factor = 0.95
+            elif abs_angle < 55:  # Medium curve - moderate reduction
+                angle_factor = 0.85
+            else:  # Sharper curve (55-75°) - more reduction
+                angle_factor = 0.70
+            
+            v = v_base * angle_factor
         
         # Clip to limits
         v = max(0.0, min(self.max_linear_vel, v))
@@ -277,16 +314,16 @@ class FuzzyTrajectoryController(Node):
                 min_dist = dist
                 closest_idx = i
         
-        # 🔧 IMPROVED v2: Much smaller lookahead for tighter tracking
-        # Pure pursuit with very short lookahead distance
-        if min_dist < 0.3:  # Very close to path
-            lookahead_points = 1  # Almost no lookahead - follow exactly
-        elif min_dist < 1.0:  # Close
-            lookahead_points = 2
-        elif min_dist < 2.0:  # Moderate distance
-            lookahead_points = 3
-        else:  # Far from path
-            lookahead_points = 5  # Larger lookahead to get back on track
+        # 🔧 IMPROVED v8: SMARTER lookahead - minimal for tight corners
+        # Reduced lookahead to track corners more precisely
+        if min_dist < 0.10:  # Very close to path - MINIMAL lookahead
+            lookahead_points = 2  # Almost no lookahead for tight tracking
+        elif min_dist < 0.25:  # Close - small lookahead
+            lookahead_points = 3  # Stay close to path
+        elif min_dist < 0.5:  # Moderate distance
+            lookahead_points = 5  # Balance tracking
+        else:  # Far from path - larger lookahead
+            lookahead_points = 8  # Get back to path
         
         target_idx = min(closest_idx + lookahead_points, len(path.poses) - 1)
         
@@ -411,6 +448,11 @@ class FuzzyTrajectoryController(Node):
         # 🔧 CRITICAL: Limit velocities to respect wheel velocity constraints
         v, omega = self.limit_wheel_velocities(v, omega)
         
+        # Calculate wheel velocities for logging
+        half_wheelbase = self.wheel_base / 2.0
+        v_left = v - (omega * half_wheelbase)
+        v_right = v + (omega * half_wheelbase)
+        
         # Publish
         cmd_vel = TwistStamped()
         cmd_vel.header.stamp = self.get_clock().now().to_msg()
@@ -419,12 +461,20 @@ class FuzzyTrajectoryController(Node):
         cmd_vel.twist.angular.z = omega
         self.cmd_vel_pub.publish(cmd_vel)
         
-        # Log
-        self.get_logger().info(
-            f'eD={e_d:.3f}m, eT={e_theta_deg:.1f}° | '
-            f'v={v:.3f}m/s, ω={omega:.3f}rad/s',
-            throttle_duration_sec=1.0
-        )
+        # Log with detailed velocity information
+        if self.verbose_logging:
+            self.get_logger().info(
+                f'eD={e_d:.3f}m, eT={e_theta_deg:.1f}° | '
+                f'v={v:.3f}m/s, ω={omega:.3f}rad/s | '
+                f'vL={v_left:.3f}m/s, vR={v_right:.3f}m/s',
+                throttle_duration_sec=0.5
+            )
+        else:
+            self.get_logger().info(
+                f'eD={e_d:.3f}m, eT={e_theta_deg:.1f}° | '
+                f'v={v:.3f}m/s, ω={omega:.3f}rad/s',
+                throttle_duration_sec=1.0
+            )
 
 
 def main(args=None):
