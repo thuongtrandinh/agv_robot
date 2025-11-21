@@ -53,15 +53,18 @@ ekf_filter_node:
       # do not provide some of the state variables estimated by the filter. For example, a TwistWithCovarianceStamped message
       # has no pose information, so the first six values would be meaningless in that case. Each vector defaults to all false
       # if unspecified, effectively making this parameter required for each sensor.
-      # CRITICAL FIX: Disable IMU yaw (position 5) to prevent drift during reverse motion
-      # Only use IMU angular velocity (vyaw) and linear acceleration (ax)
+      # OPTIMIZED: Use IMU angular velocity (vyaw) and acceleration (ax)
+      # IMU provides high-frequency angular velocity to smooth encoder-based yaw
+      # Do NOT use absolute IMU yaw to avoid drift during reverse motion
       imu0_config: [false, false, false,
                     false, false, false,
                     false, false, false,
                     false, false, true,
                     true,  false, false]
 
-      imu0_differential: false
+      # Enable differential mode: IMU angular velocity corrects encoder yaw rate
+      # This helps compensate for wheel slip while avoiding absolute yaw drift
+      imu0_differential: true
       imu0_pose_use_child_frame: false
       imu0_remove_gravitational_acceleration: true
       
@@ -99,10 +102,17 @@ ekf_filter_node:
       odom0_relative: false
       odom0_queue_size: 10
 
-      # ArUco Pose Input - VÔ HIỆU HÓA ĐỂ TRÁNH XUNG ĐỘT VỚI AMCL/SLAM
-      # Dữ liệu này sẽ được sử dụng bởi một node khác (ví dụ AMCL) trong tương lai.
-      # This input provides an absolute pose measurement of the robot in the map frame
-      # derived from ArUco marker observations.
+      # Trust encoder more by reducing assumed measurement noise
+      # Lower values = higher trust in this sensor
+      # Position (x,y,yaw) from encoder is now very reliable
+      odom0_pose_rejection_threshold: 5.0  # Reject only very bad measurements
+      odom0_twist_rejection_threshold: 3.0
+
+      # ArUco Pose Input - ENABLED for absolute position correction
+      # Provides ground truth position when markers are visible
+      # Used to correct cumulative encoder drift periodically
+      # NOTE: This works with EKF because world_frame=odom (local frame)
+      # ArUco pose is transformed to odom frame before fusion
       pose0: /aruco/pose_with_covariance
       pose0_config: [true,  true,  false,
                      false, false, true,
@@ -113,6 +123,10 @@ ekf_filter_node:
       pose0_queue_size: 5
       pose0_nodelay: true
 
+      # Moderate trust in ArUco: correct drift but don't override smooth encoder motion
+      # Higher threshold = more tolerant of outliers (markers can have detection errors)
+      pose0_rejection_threshold: 10.0  # Allow larger corrections when needed
+
       # [ADVANCED] The process noise covariance matrix can be difficult to tune, and can vary for each application, so it is
       # exposed as a configuration parameter. This matrix represents the noise we add to the total error after each
       # prediction step. The better the omnidirectional motion model matches your system, the smaller these values can be.
@@ -121,21 +135,21 @@ ekf_filter_node:
       # to be larger, which will cause the filter to trust the incoming measurement more during correction. The values are
       # ordered as x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az. Defaults to the matrix below if
       # unspecified.
-      # TUNED FOR VELOCITY-ONLY INPUT: Lower position noise to reduce drift
-      # Since we only fuse velocities (not positions), we need low process noise for position states
-      # to avoid accumulating uncertainty during integration
-      process_noise_covariance: [0.001, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
-                                 0.0,   0.001, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+      # OPTIMIZED FOR MULTI-SENSOR FUSION: Low process noise with high-quality sensors
+      # Encoder + IMU (continuous) + ArUco (periodic absolute corrections)
+      # Lower noise = trust sensor measurements more than motion model predictions
+      process_noise_covariance: [0.0005, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                                 0.0,   0.0005, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
                                  0.0,   0.0,   0.001, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
                                  0.0,   0.0,   0.0,   0.001, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
                                  0.0,   0.0,   0.0,   0.0,   0.001, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
-                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.005, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.002, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
                                  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
                                  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
                                  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
                                  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.005, 0.0,   0.0,   0.0,   0.0,   0.0,
                                  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.005, 0.0,   0.0,   0.0,   0.0,
-                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,   0.0,   0.0,
+                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.005, 0.0,   0.0,   0.0,
                                  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.005, 0.0,   0.0,
                                  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.005, 0.0,
                                  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01]

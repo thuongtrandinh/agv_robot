@@ -12,7 +12,10 @@ controller_manager:
 
 
 joint_broad:
-  ros__parameters: {}
+  ros__parameters:
+    # Synchronize joint state publishing with odometry rate (15Hz)
+    # This prevents visual lag between robot body and wheels in RViz
+    publish_rate: 15.0
 
 
 diff_cont:

@@ -42,7 +42,11 @@ def launch_setup(context, *args, **kwargs):
         robot_state_pub = Node(
             package='robot_state_publisher',
             executable='robot_state_publisher',
-            parameters=[{'robot_description': robot_description, 'use_sim_time': use_sim_time}],
+            parameters=[{
+                'robot_description': robot_description, 
+                'use_sim_time': use_sim_time,
+                'publish_frequency': 30.0  # Smooth TF publishing for RViz
+            }],
             output='screen'
         )
 
