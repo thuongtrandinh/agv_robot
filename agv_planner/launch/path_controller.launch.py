@@ -17,10 +17,10 @@ def generate_launch_description():
     )
 
     # ==========================
-    # Global Planner Node (Delay để AMCL và /scan ổn định)
+    # Global Planner Node (Delay để odometry và /scan ổn định)
     # ==========================
     global_planner = TimerAction(
-        period=5.0,  # Tăng delay để AMCL publish /amcl_pose ổn định
+        period=5.0,  # Wait 5s for odometry and scan to be ready
         actions=[
             Node(
                 package='agv_planner',
@@ -48,7 +48,7 @@ def generate_launch_description():
     # Local Planner Node (Delay sau global planner)
     # ==========================
     local_planner = TimerAction(
-        period=7.0,  # Delay thêm để global planner publish path trước
+        period=7.0,  # Wait 7s to ensure global planner is ready
         actions=[
             Node(
                 package='agv_planner',
@@ -66,6 +66,9 @@ def generate_launch_description():
                     {'control_rate': 10.0},  # 10Hz - đồng bộ với yêu cầu
                     # Robot geometry
                     {'robot_radius': 0.23},  # width 46cm/2
+                    # Hardware delay compensation
+                    {'hardware_delay': 0.15},  # STM32 PID processing delay (s)
+                    {'enable_predictive': True},  # Enable predictive control
                     # Tracking gains - giảm để ổn định hơn
                     {'track.k_p': 1.2},
                     {'track.k_d': 1.5},

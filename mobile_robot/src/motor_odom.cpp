@@ -102,7 +102,9 @@ private:
 
     // Compute robot linear & angular velocities
     double vx = (v_right + v_left) / 2.0;
-    double vtheta = (v_right - v_left) / wheel_separation_;
+    // FIXED: Negate angular velocity to fix reversed rotation direction
+    // When robot turns left (left wheel slower), vtheta should be positive (CCW)
+    double vtheta = -((v_right - v_left) / wheel_separation_);
 
     // compute dt and integrate pose (simple Euler)
     double dt = (now - last_time_).seconds();

@@ -60,7 +60,7 @@ def launch_setup(context, *args, **kwargs):
 
     # Delay AMCL activation to ensure transforms are available
     amcl_delayed = TimerAction(
-        period=4.0,  # Delay AMCL activation by 4 seconds
+        period=5.0,  # Increased delay to 5 seconds for more reliable startup
         actions=[
             Node(
                 package="nav2_amcl",
@@ -84,7 +84,9 @@ def launch_setup(context, *args, **kwargs):
         parameters=[
             {"node_names": ["map_server", "amcl"]},
             {"use_sim_time": use_sim_time},
-            {"autostart": True}
+            {"autostart": True},
+            {"bond_timeout": 10.0},  # Increase timeout to prevent warnings
+            {"attempt_respawn_reconnection": True}  # Auto-reconnect if needed
         ],
     )
 

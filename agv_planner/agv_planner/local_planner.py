@@ -68,6 +68,10 @@ class HybridLocalPlanner(Node):
         # Braking behavior (dừng siêu êm)
         self.declare_parameter('brake.start_dist', 2.0)       # bắt đầu phanh mềm khi cách đích < 2m
         self.declare_parameter('brake.safety_factor', 0.6)    # hệ số an toàn cho v² = 2 a s
+        
+        # Hardware delay compensation
+        self.declare_parameter('hardware_delay', 0.15)        # Delay from cmd_vel to actual motion (s)
+        self.declare_parameter('enable_predictive', True)     # Enable predictive pose compensation
 
         # ==========================
         # Load parameter values
@@ -101,6 +105,9 @@ class HybridLocalPlanner(Node):
 
         self.BRAKE_START_DIST = float(self.get_parameter('brake.start_dist').value)
         self.BRAKE_SAFETY_FACTOR = float(self.get_parameter('brake.safety_factor').value)
+        
+        self.HARDWARE_DELAY = float(self.get_parameter('hardware_delay').value)
+        self.ENABLE_PREDICTIVE = bool(self.get_parameter('enable_predictive').value)
 
         # ==========================
         # Internal state variables
@@ -108,9 +115,19 @@ class HybridLocalPlanner(Node):
         self.state = PlannerState.IDLE
 
         self.path_points = None       # Nx2 (x,y) trong frame map
-        self.current_pose = None      # [x, y, yaw] trong map
+        self.current_pose = None      # [x, y, yaw] trong map (primary from odometry)
         self.current_v = 0.0
         self.current_w = 0.0
+        
+        # Last commanded velocities (for predictive control)
+        self.last_cmd_v = 0.0
+        self.last_cmd_w = 0.0
+
+        # Hybrid pose tracking: odometry (smooth) + AMCL correction (map-aligned)
+        self.odom_pose = None         # Latest odometry pose [x, y, yaw]
+        self.amcl_pose = None         # Latest AMCL pose [x, y, yaw]
+        self.pose_offset = np.zeros(3)  # Correction offset from AMCL (dx, dy, dyaw)
+        self.last_amcl_time = None    # Timestamp of last AMCL update
 
         self.last_cte = 0.0           # cross-track error trước đó (cho D term)
 
@@ -202,15 +219,39 @@ class HybridLocalPlanner(Node):
         self.get_logger().info(f"📌 New global path received: {len(pts)} points. State → TRACKING.")
 
     def amcl_pose_callback(self, msg: PoseWithCovarianceStamped):
-        """Callback for /amcl_pose - get corrected pose from AMCL"""
+        """Callback for /amcl_pose - update map-correction offset"""
         pos = msg.pose.pose.position
         ori: Quaternion = msg.pose.pose.orientation
         _, _, yaw = self.quaternion_to_euler(ori)
 
-        self.current_pose = np.array([pos.x, pos.y, yaw], dtype=float)
+        self.amcl_pose = np.array([pos.x, pos.y, yaw], dtype=float)
+        self.last_amcl_time = self.get_clock().now()
+        
+        # Calculate offset between AMCL (map-corrected) and odometry (smooth but drifting)
+        if self.odom_pose is not None:
+            # Update offset: how much to shift odometry to match AMCL
+            self.pose_offset[0] = self.amcl_pose[0] - self.odom_pose[0]  # dx
+            self.pose_offset[1] = self.amcl_pose[1] - self.odom_pose[1]  # dy
+            # Normalize angle difference
+            dyaw = self.amcl_pose[2] - self.odom_pose[2]
+            self.pose_offset[2] = np.arctan2(np.sin(dyaw), np.cos(dyaw))  # dyaw
 
     def odom_velocity_callback(self, msg: Odometry):
-        """Callback for /odometry/filtered - get velocity only"""
+        """Callback for /odometry/filtered - primary pose and velocity source"""
+        # Extract pose from odometry
+        pos = msg.pose.pose.position
+        ori: Quaternion = msg.pose.pose.orientation
+        _, _, yaw = self.quaternion_to_euler(ori)
+        
+        self.odom_pose = np.array([pos.x, pos.y, yaw], dtype=float)
+        
+        # Apply AMCL correction offset to get map-aligned pose
+        self.current_pose = self.odom_pose + self.pose_offset
+        
+        # Normalize yaw
+        self.current_pose[2] = np.arctan2(np.sin(self.current_pose[2]), np.cos(self.current_pose[2]))
+        
+        # Extract velocity
         self.current_v = float(msg.twist.twist.linear.x)
         self.current_w = float(msg.twist.twist.angular.z)
 
@@ -259,12 +300,29 @@ class HybridLocalPlanner(Node):
             self.publish_cmd(0.0, 0.0)
             return
 
-        # Distance to final goal
+        # Predictive pose compensation for hardware delay
+        # Predict where robot will be when the command actually executes
+        if self.ENABLE_PREDICTIVE and (self.last_cmd_v != 0.0 or self.last_cmd_w != 0.0):
+            # Simple kinematic prediction: forward integrate last command
+            dt = self.HARDWARE_DELAY
+            pred_x = self.current_pose[0] + self.last_cmd_v * np.cos(self.current_pose[2]) * dt
+            pred_y = self.current_pose[1] + self.last_cmd_v * np.sin(self.current_pose[2]) * dt
+            pred_yaw = self.current_pose[2] + self.last_cmd_w * dt
+            pred_yaw = np.arctan2(np.sin(pred_yaw), np.cos(pred_yaw))  # Normalize
+            working_pose = np.array([pred_x, pred_y, pred_yaw])
+        else:
+            working_pose = self.current_pose.copy()
+
+        # Distance to final goal (use predicted pose)
         final_goal = self.path_points[-1, :]
-        dist_to_goal = np.linalg.norm(self.current_pose[:2] - final_goal)
+        dist_to_goal = np.linalg.norm(working_pose[:2] - final_goal)
 
         # Update state machine
         self.update_state(dist_to_goal)
+
+        # Temporarily use predicted pose for control calculations
+        actual_pose = self.current_pose.copy()
+        self.current_pose = working_pose
 
         # Compute target v, w from controllers
         target_v, target_w = 0.0, 0.0
@@ -284,8 +342,15 @@ class HybridLocalPlanner(Node):
         elif self.state == PlannerState.TRACKING:
             target_v, target_w = self.path_tracking_controller(dist_to_goal)
 
+        # Restore actual pose
+        self.current_pose = actual_pose
+
         # Apply acceleration limits and clamp to [0, MAX]
         cmd_v, cmd_w = self.rate_limit_and_clamp(target_v, target_w)
+        
+        # Store last command for next prediction cycle
+        self.last_cmd_v = cmd_v
+        self.last_cmd_w = cmd_w
 
         # Publish
         self.publish_cmd(cmd_v, cmd_w)

@@ -44,11 +44,16 @@ class GlobalPlannerNode(Node):
             PoseStamped, '/goal_pose', self.goal_callback, reliable_qos
         )
         
-        # Subscribe directly to /amcl_pose for map-corrected robot position
+        # Subscribe to AMCL for map correction
         self.pose_sub = self.create_subscription(
-            PoseWithCovarianceStamped, '/amcl_pose', self.robot_pose_callback, reliable_qos
+            PoseWithCovarianceStamped, '/amcl_pose', self.amcl_pose_callback, reliable_qos
         )
         
+        # Subscribe to odometry for smooth real-time pose
+        self.odom_sub = self.create_subscription(
+            Odometry, '/odometry/filtered', self.odom_callback, reliable_qos
+        )
+
         self.map_sub = self.create_subscription(
             OccupancyGrid, '/map', self.map_callback,
             QoSProfile(
@@ -89,8 +94,16 @@ class GlobalPlannerNode(Node):
         # =======================
         # Variables
         # =======================
+        # Hybrid pose tracking: odometry (primary) + AMCL correction
         self.robot_position = None
         self.robot_orientation = None  # yaw
+        
+        self.odom_position = None
+        self.odom_orientation = None
+        self.amcl_position = None
+        self.amcl_orientation = None
+        self.pose_offset = np.array([0.0, 0.0])  # Correction offset from AMCL (dx, dy)
+        self.yaw_offset = 0.0
 
         self.start = None
         self.goal = None
@@ -149,14 +162,35 @@ class GlobalPlannerNode(Node):
     # ============================================
     # ROBOT POSE CALLBACK (from /amcl_pose)
     # ============================================
-    def robot_pose_callback(self, msg: PoseWithCovarianceStamped):
+    def amcl_pose_callback(self, msg: PoseWithCovarianceStamped):
+        """Update map-correction offset from AMCL"""
         pos = msg.pose.pose.position
         ori = msg.pose.pose.orientation
-
         _, _, yaw = self.quaternion_to_euler(ori)
 
-        self.robot_position = np.array([pos.x, pos.y])
-        self.robot_orientation = yaw
+        self.amcl_position = np.array([pos.x, pos.y])
+        self.amcl_orientation = yaw
+        
+        # Calculate offset between AMCL (map-corrected) and odometry
+        if self.odom_position is not None:
+            self.pose_offset = self.amcl_position - self.odom_position
+            # Normalize angle difference
+            dyaw = self.amcl_orientation - self.odom_orientation
+            self.yaw_offset = np.arctan2(np.sin(dyaw), np.cos(dyaw))
+    
+    def odom_callback(self, msg: Odometry):
+        """Update robot pose from odometry - primary source for planning"""
+        pos = msg.pose.pose.position
+        ori = msg.pose.pose.orientation
+        _, _, yaw = self.quaternion_to_euler(ori)
+        
+        self.odom_position = np.array([pos.x, pos.y])
+        self.odom_orientation = yaw
+        
+        # Apply AMCL correction offset to get map-aligned pose
+        self.robot_position = self.odom_position + self.pose_offset
+        raw_yaw = self.odom_orientation + self.yaw_offset
+        self.robot_orientation = np.arctan2(np.sin(raw_yaw), np.cos(raw_yaw))
 
     def quaternion_to_euler(self, q: Quaternion):
         x, y, z, w = q.x, q.y, q.z, q.w
@@ -183,9 +217,9 @@ class GlobalPlannerNode(Node):
             self.get_logger().warn("❌ No map. Cannot plan.")
             return
 
-        # Use AMCL-corrected robot position as start (more accurate than TF)
+        # Use hybrid pose (odometry + AMCL correction) as start
         if self.robot_position is None:
-            self.get_logger().warn("❌ No robot pose from AMCL yet. Cannot plan.")
+            self.get_logger().warn("❌ No robot pose yet (waiting for odometry). Cannot plan.")
             return
         
         self.start = self.robot_position.copy()

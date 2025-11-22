@@ -9,24 +9,23 @@ amcl:
     odom_frame_id: "odom"
     base_frame_id: "base_footprint"
 
-    # ODOMETRY MODEL - Balanced for initial localization then odometry tracking
-    # Phase 1 (startup): Moderate noise allows LiDAR to localize
-    # Phase 2 (converged): Trust odometry more for smooth tracking
+    # ODOMETRY MODEL - Trust LiDAR more for orientation
+    # Reduced odometry noise → AMCL relies more on scan matching for heading
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
-    alpha1: 0.01  # Moderate - allow initial localization
-    alpha2: 0.01  # Rotation noise from translation
-    alpha3: 0.008  # Translation noise
-    alpha4: 0.008  # Translation noise from rotation
-    alpha5: 0.005  # Strafe noise
+    alpha1: 0.005  # Reduced - trust LiDAR for rotation
+    alpha2: 0.005  # Reduced - rotation noise from translation
+    alpha3: 0.008  # Translation noise (keep moderate)
+    alpha4: 0.005  # Reduced - translation noise from rotation
+    alpha5: 0.003  # Reduced strafe noise
 
     # Sensor topics
     scan_topic: /scan
 
-    # Transform & timing
+    # Transform & timing - Force continuous updates
     tf_broadcast: true
     transform_tolerance: 0.2  # Tight sync to prevent visual lag
-    update_min_a: 0.02  # Update after 0.02 rad (~1°) rotation - more frequent
-    update_min_d: 0.02  # Update after 2cm translation - more frequent
+    update_min_a: 0.01  # Update after 0.01 rad (~0.5°) - very frequent
+    update_min_d: 0.01  # Update after 1cm translation - very frequent
 
     # Initial pose (floats)
     set_initial_pose: true
@@ -36,28 +35,28 @@ amcl:
       z: 0.0
       yaw: 0.0
 
-    # Particle filter settings - More particles for initial localization
-    # Allows spreading during startup, converges to tight cluster
-    max_particles: 2000
+    # Particle filter settings - Aggressive convergence to prevent divergence
+    # Kill bad particles quickly, keep only good matches
+    max_particles: 3000  # More particles for better initial coverage
     min_particles: 500
-    pf_err: 0.04  # Moderate - allows initial spread then convergence
+    pf_err: 0.01  # Very tight - aggressive convergence
     pf_z: 0.99
-    resample_interval: 1  # Standard resampling for good convergence
+    resample_interval: 2  # Resample more often to kill bad particles
 
-    # Laser model
+    # Laser model - More beams for better orientation accuracy
     laser_model_type: "likelihood_field"
-    max_beams: 30
+    max_beams: 60  # Doubled - better scan matching for heading
     laser_max_range: 100.0
     laser_min_range: 0.0
-    laser_likelihood_max_dist: 1.2  # Moderate - good initial localization
+    laser_likelihood_max_dist: 1.0  # Tighter - precise matching
 
-    # Laser model weights - Strong initial localization, moderate tracking
-    # Good for startup localization, gentle correction during tracking
-    z_hit: 0.65  # Strong scan matching for initial localization
-    z_short: 0.1
-    z_max: 0.1
-    z_rand: 0.15  # Low - trust scans are meaningful
-    sigma_hit: 0.25  # Moderate - effective localization without jitter
+    # Laser model weights - Maximum LiDAR trust, kill bad particles
+    # Very high z_hit → particles outside map get killed quickly
+    z_hit: 0.90  # Maximum - only keep particles that match scan
+    z_short: 0.03
+    z_max: 0.02
+    z_rand: 0.05  # Minimal - almost no tolerance for random noise
+    sigma_hit: 0.15  # Very tight - precise scan matching required
     lambda_short: 0.1
 
     # Beam skip (improves performance / ignores inconsistent beams)

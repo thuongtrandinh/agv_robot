@@ -114,12 +114,23 @@ class FuzzyTrajectoryController(Node):
         # 🔧 CRITICAL: Maximum wheel velocity constraint (1.0 m/s per wheel)
         self.max_wheel_vel = 1.0  # m/s - hardware limit for each motor
         
-        # Robot state
+        # Robot state (hybrid: odometry + AMCL correction)
         self.robot_x = 0.0
         self.robot_y = 0.0
         self.robot_theta = 0.0
         self.current_path = None
         self.path_received = False
+        
+        # Hybrid pose tracking: odometry (smooth) + AMCL correction (map-aligned)
+        self.odom_x = 0.0
+        self.odom_y = 0.0
+        self.odom_theta = 0.0
+        self.amcl_x = 0.0
+        self.amcl_y = 0.0
+        self.amcl_theta = 0.0
+        self.offset_x = 0.0  # Correction offset from AMCL
+        self.offset_y = 0.0
+        self.offset_theta = 0.0
         
         # 🚀 NEW: Lead-in phase - hold trajectory until robot reaches lead-in point
         self.lead_in_point_x = None
@@ -141,13 +152,19 @@ class FuzzyTrajectoryController(Node):
         from std_msgs.msg import Bool
         self.traj_start_pub = self.create_publisher(Bool, '/trajectory_start_signal', 10)
         
-        # Subscribe to AMCL pose for robot localization
+        # Subscribe to AMCL pose for map correction
         self.pose_sub = self.create_subscription(
             PoseWithCovarianceStamped, '/amcl_pose', 
-            self.amcl_pose_callback, 10)
+            self.amcl_pose_callback, reliable_qos)
+        
+        # Subscribe to odometry for smooth real-time tracking
+        from nav_msgs.msg import Odometry
+        self.odom_sub = self.create_subscription(
+            Odometry, '/odometry/filtered',
+            self.odom_callback, reliable_qos)
         
         self.path_sub = self.create_subscription(Path, '/trajectory', 
-                                                  self.path_callback, 10)
+                                                  self.path_callback, reliable_qos)
         
         # Initialize fuzzy system
         self.get_logger().info('Initializing fuzzy system...')
@@ -334,18 +351,45 @@ class FuzzyTrajectoryController(Node):
         return v, omega
     
     def amcl_pose_callback(self, msg):
-        """Update robot pose from AMCL localization
+        """Update map-correction offset from AMCL
         
-        AMCL provides pose estimation in the map frame, which is more
-        accurate than raw odometry as it corrects for drift using
-        particle filter localization.
+        AMCL provides map-corrected pose. We use it to calculate
+        the offset between odometry and map frame.
         """
-        self.robot_x = msg.pose.pose.position.x
-        self.robot_y = msg.pose.pose.position.y
+        self.amcl_x = msg.pose.pose.position.x
+        self.amcl_y = msg.pose.pose.position.y
         orientation_q = msg.pose.pose.orientation
-        _, _, self.robot_theta = quaternion_to_euler(
+        _, _, self.amcl_theta = quaternion_to_euler(
             orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w
         )
+        
+        # Calculate offset between AMCL (map-corrected) and odometry
+        self.offset_x = self.amcl_x - self.odom_x
+        self.offset_y = self.amcl_y - self.odom_y
+        # Normalize angle difference
+        dtheta = self.amcl_theta - self.odom_theta
+        self.offset_theta = math.atan2(math.sin(dtheta), math.cos(dtheta))
+    
+    def odom_callback(self, msg):
+        """Update robot pose from odometry - primary source for smooth tracking
+        
+        Odometry provides smooth, high-frequency pose updates.
+        We apply AMCL correction offset to get map-aligned pose.
+        """
+        # Extract odometry pose
+        self.odom_x = msg.pose.pose.position.x
+        self.odom_y = msg.pose.pose.position.y
+        orientation_q = msg.pose.pose.orientation
+        _, _, self.odom_theta = quaternion_to_euler(
+            orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w
+        )
+        
+        # Apply AMCL correction offset to get map-aligned pose
+        self.robot_x = self.odom_x + self.offset_x
+        self.robot_y = self.odom_y + self.offset_y
+        raw_theta = self.odom_theta + self.offset_theta
+        # Normalize angle to [-pi, pi]
+        self.robot_theta = math.atan2(math.sin(raw_theta), math.cos(raw_theta))
     
     def path_callback(self, msg):
         """Receive trajectory - extract lead-in point (first point before trajectory starts)
