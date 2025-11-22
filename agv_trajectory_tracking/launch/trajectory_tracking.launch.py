@@ -46,8 +46,8 @@ def generate_launch_description():
     
     max_linear_vel_arg = DeclareLaunchArgument(
         'max_linear_vel',
-        default_value='0.45',  # OPTIMIZED for stable tracking of all trajectories
-        description='Maximum robot linear velocity (m/s) - Optimal: 0.45'
+        default_value='0.35',  # Reduced for tighter tracking with hardware delays
+        description='Maximum robot linear velocity (m/s) - Reduced for accuracy'
     )
     
     max_angular_vel_arg = DeclareLaunchArgument(
@@ -58,8 +58,8 @@ def generate_launch_description():
     
     trajectory_speed_arg = DeclareLaunchArgument(
         'trajectory_speed',
-        default_value='0.35',  # m/s - OPTIMIZED for Circle, Square, Figure-8
-        description='Trajectory reference speed (m/s) - Optimal: 0.35'
+        default_value='0.25',  # m/s - Reduced for better tracking accuracy
+        description='Trajectory reference speed (m/s) - Lower for precision'
     )
     
     enable_traj_publish_arg = DeclareLaunchArgument(

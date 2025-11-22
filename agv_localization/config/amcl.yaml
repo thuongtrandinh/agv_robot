@@ -9,14 +9,15 @@ amcl:
     odom_frame_id: "odom"
     base_frame_id: "base_footprint"
 
-    # ODOMETRY MODEL - Use wheel encoder + IMU fused by EKF
-    # Lower alpha = trust odometry more (EKF output is very reliable)
+    # ODOMETRY MODEL - Balanced for initial localization then odometry tracking
+    # Phase 1 (startup): Moderate noise allows LiDAR to localize
+    # Phase 2 (converged): Trust odometry more for smooth tracking
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
-    alpha1: 0.05  # Rotation noise from rotation
-    alpha2: 0.05  # Rotation noise from translation
-    alpha3: 0.03  # Translation noise from translation
-    alpha4: 0.03  # Translation noise from rotation
-    alpha5: 0.02  # Strafe noise (not used for differential drive)
+    alpha1: 0.01  # Moderate - allow initial localization
+    alpha2: 0.01  # Rotation noise from translation
+    alpha3: 0.008  # Translation noise
+    alpha4: 0.008  # Translation noise from rotation
+    alpha5: 0.005  # Strafe noise
 
     # Sensor topics
     scan_topic: /scan
@@ -24,8 +25,8 @@ amcl:
     # Transform & timing
     tf_broadcast: true
     transform_tolerance: 0.2  # Tight sync to prevent visual lag
-    update_min_a: 0.05  # Update after 0.05 rad (~3°) rotation
-    update_min_d: 0.05  # Update after 5cm translation
+    update_min_a: 0.02  # Update after 0.02 rad (~1°) rotation - more frequent
+    update_min_d: 0.02  # Update after 2cm translation - more frequent
 
     # Initial pose (floats)
     set_initial_pose: true
@@ -35,26 +36,28 @@ amcl:
       z: 0.0
       yaw: 0.0
 
-    # Particle filter settings - More particles for better tracking
+    # Particle filter settings - More particles for initial localization
+    # Allows spreading during startup, converges to tight cluster
     max_particles: 2000
     min_particles: 500
-    pf_err: 0.02  # Lower error threshold for more particles
+    pf_err: 0.04  # Moderate - allows initial spread then convergence
     pf_z: 0.99
-    resample_interval: 1
+    resample_interval: 1  # Standard resampling for good convergence
 
     # Laser model
     laser_model_type: "likelihood_field"
     max_beams: 30
     laser_max_range: 100.0
     laser_min_range: 0.0
-    laser_likelihood_max_dist: 2.0
+    laser_likelihood_max_dist: 1.2  # Moderate - good initial localization
 
-    # Laser model weights - Trust accurate hits more
-    z_hit: 0.8  # Higher weight for correct measurements
-    z_short: 0.05
-    z_max: 0.05
-    z_rand: 0.1  # Lower random noise weight
-    sigma_hit: 0.15  # Tighter hit distribution
+    # Laser model weights - Strong initial localization, moderate tracking
+    # Good for startup localization, gentle correction during tracking
+    z_hit: 0.65  # Strong scan matching for initial localization
+    z_short: 0.1
+    z_max: 0.1
+    z_rand: 0.15  # Low - trust scans are meaningful
+    sigma_hit: 0.25  # Moderate - effective localization without jitter
     lambda_short: 0.1
 
     # Beam skip (improves performance / ignores inconsistent beams)
@@ -63,9 +66,10 @@ amcl:
     beam_skip_error_threshold: 0.7  # Lower threshold = skip less
     beam_skip_threshold: 0.2  # Keep more beams for accuracy
 
-    # Recovery
-    recovery_alpha_fast: 0.0
-    recovery_alpha_slow: 0.0
+    # Recovery - Adaptive behavior after convergence
+    # After localization converges, these reduce effective alpha (trust odom more)
+    recovery_alpha_slow: 0.001  # Slow filter to detect convergence
+    recovery_alpha_fast: 0.1    # Fast filter to adapt quickly
 
-    # Pose publishing
-    save_pose_rate: 0.5
+    # Pose publishing - Match trajectory controller frequency for real-time feedback
+    save_pose_rate: 20.0  # 20 Hz for trajectory tracking (was 0.5 Hz)

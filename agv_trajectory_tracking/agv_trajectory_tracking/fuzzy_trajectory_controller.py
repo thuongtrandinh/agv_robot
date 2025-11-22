@@ -370,16 +370,17 @@ class FuzzyTrajectoryController(Node):
         closest_idx = best_idx
         min_dist = best_dist
         
-        # 🔧 IMPROVED v11: MODERATE lookahead for smooth tracking
-        # With ahead detection, we can safely use more lookahead
+        # 🔧 OPTIMIZED v13: ZERO/MINIMAL lookahead for direct tracking
+        # Hardware delays require tracking current/immediate point only
+        # No predictive lookahead - react to current position
         if min_dist < 0.10:  # Very close to path
-            lookahead_points = 4  # Small lookahead for smooth following
+            lookahead_points = 0  # ZERO lookahead - track current point
         elif min_dist < 0.20:  # Close
-            lookahead_points = 5  # Moderate lookahead
+            lookahead_points = 1  # Track just next point
         elif min_dist < 0.40:  # Medium distance
-            lookahead_points = 6  # More lookahead
+            lookahead_points = 2  # Small correction
         else:  # Far from path
-            lookahead_points = 7  # Larger lookahead to catch up
+            lookahead_points = 3  # Moderate catch-up
         
         target_idx = min(closest_idx + lookahead_points, len(path.poses) - 1)
         
