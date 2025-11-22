@@ -39,10 +39,6 @@ def generate_launch_description():
                     {'safety_margin': 0.05},
                     # Giảm tần số publish path nếu cần
                     {'publish_rate': 5.0}  # 5Hz thay vì real-time
-                ],
-                remappings=[
-                    # Subscribe từ /amcl_pose thay vì /odometry/filtered
-                    ('/robot_pose', '/amcl_pose')
                 ]
             )
         ]

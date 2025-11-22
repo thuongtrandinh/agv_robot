@@ -53,8 +53,9 @@ def launch_setup(context, *args, **kwargs):
     controller_manager = Node(
         package='controller_manager',
         executable='ros2_control_node',
-        parameters=[controller_yaml, {'robot_description': robot_description}],
-        output='screen'
+        parameters=[controller_yaml],
+        output='screen',
+        remappings=[('/robot_description', '/robot_state_publisher/robot_description')]
     )
 
     spawner_jsb = Node(

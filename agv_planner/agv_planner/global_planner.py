@@ -44,8 +44,9 @@ class GlobalPlannerNode(Node):
             PoseStamped, '/goal_pose', self.goal_callback, reliable_qos
         )
         
+        # Subscribe directly to /amcl_pose for map-corrected robot position
         self.pose_sub = self.create_subscription(
-            PoseWithCovarianceStamped, '/amcl_pose', self.pose_callback, reliable_qos
+            PoseWithCovarianceStamped, '/amcl_pose', self.robot_pose_callback, reliable_qos
         )
         
         self.map_sub = self.create_subscription(
@@ -57,8 +58,6 @@ class GlobalPlannerNode(Node):
                 depth=1
             )
         )
-
-        self.create_subscription(Odometry, '/odometry/filtered', self.odom_callback, 10)
 
         # =======================
         # Tham số ROS 2
@@ -86,32 +85,6 @@ class GlobalPlannerNode(Node):
 
         # Wall margin = robot footprint + safety margin (y chang Nav2 inflation)
         self.wall_margin = self.robot_radius + self.safety_margin
-        # =======================
-        # Publisher
-        # =======================
-        self.path_pub = self.create_publisher(Path, '/global_path', 10)
-
-        # =======================
-        # QoS cho /map
-        # =======================
-        map_qos = QoSProfile(
-            reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            depth=1
-        )
-
-        # =======================
-        # Subscribers
-        # =======================
-        self.map_sub = self.create_subscription(
-            OccupancyGrid,
-            '/map',
-            self.map_callback,
-            map_qos
-        )
-
-        self.create_subscription(PoseStamped, '/goal_pose', self.goal_callback, 10)
-        self.create_subscription(Odometry, '/odometry/filtered', self.odom_callback, 10)
 
         # =======================
         # Variables
@@ -174,9 +147,9 @@ class GlobalPlannerNode(Node):
         self.get_logger().info(f"📊 Map stats: {free_cells}/{total_cells} free cells ({occupied_ratio:.1f}% occupied after inflation)")
 
     # ============================================
-    # ODOM CALLBACK
+    # ROBOT POSE CALLBACK (from /amcl_pose)
     # ============================================
-    def odom_callback(self, msg: Odometry):
+    def robot_pose_callback(self, msg: PoseWithCovarianceStamped):
         pos = msg.pose.pose.position
         ori = msg.pose.pose.orientation
 

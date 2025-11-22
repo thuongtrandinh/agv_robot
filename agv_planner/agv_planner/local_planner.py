@@ -30,48 +30,6 @@ class PlannerState(Enum):
 class HybridLocalPlanner(Node):
     def __init__(self):
         super().__init__('agv_local_planner')
-        
-        # QoS for sensor data (BEST_EFFORT for /scan)
-        sensor_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            durability=DurabilityPolicy.VOLATILE,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=10
-        )
-        
-        # QoS for reliable topics (odometry, amcl_pose, cmd_vel)
-        reliable_qos = QoSProfile(
-            reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.VOLATILE,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=10
-        )
-        
-        # Publishers
-        self.cmd_pub = self.create_publisher(TwistStamped, '/diff_cont/cmd_vel', reliable_qos)
-        
-        # Subscribers
-        self.scan_sub = self.create_subscription(
-            LaserScan, '/scan', self.scan_callback, sensor_qos  # BEST_EFFORT
-        )
-        
-        self.odom_sub = self.create_subscription(
-            Odometry, '/odometry/filtered', self.odom_callback, reliable_qos  # RELIABLE
-        )
-        
-        self.path_sub = self.create_subscription(
-            Path, '/global_path', self.path_callback, reliable_qos
-        )
-        
-        self.map_sub = self.create_subscription(
-            OccupancyGrid, '/map', self.map_callback, 
-            QoSProfile(
-                reliability=ReliabilityPolicy.RELIABLE,
-                durability=DurabilityPolicy.TRANSIENT_LOCAL,  # Latch for /map
-                history=HistoryPolicy.KEEP_LAST,
-                depth=1
-            )
-        )
 
         # ==========================
         # Parameters (ROS 2)
@@ -175,29 +133,38 @@ class HybridLocalPlanner(Node):
         # ==========================
         # ROS 2 Interfaces
         # ==========================
-        self.cmd_pub = self.create_publisher(TwistStamped, '/diff_cont/cmd_vel', reliable_qos)
-
-        # QoS profile for sensor data (BEST_EFFORT) - compatible with LiDAR
+        
+        # QoS profiles
         sensor_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
             history=HistoryPolicy.KEEP_LAST,
             depth=10
         )
+        
+        reliable_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+        
+        map_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+        
+        # Publishers
+        self.cmd_pub = self.create_publisher(TwistStamped, '/diff_cont/cmd_vel', reliable_qos)
 
+        # Subscribers
         self.create_subscription(Path, '/global_path', self.path_callback, reliable_qos)
         self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.amcl_pose_callback, reliable_qos)
         self.create_subscription(Odometry, '/odometry/filtered', self.odom_velocity_callback, reliable_qos)
         self.create_subscription(LaserScan, '/scan', self.scan_callback, sensor_qos)
-        # Optional: static map for clearance-aware evasion gần giống MATLAB
-        self.create_subscription(OccupancyGrid, '/map', self.map_callback, 
-            QoSProfile(
-                reliability=ReliabilityPolicy.RELIABLE,
-                durability=DurabilityPolicy.TRANSIENT_LOCAL,  # Latch for /map
-                history=HistoryPolicy.KEEP_LAST,
-                depth=1
-            )
-        )
+        self.create_subscription(OccupancyGrid, '/map', self.map_callback, map_qos)
 
         self.timer = self.create_timer(self.DT, self.control_loop)
 
