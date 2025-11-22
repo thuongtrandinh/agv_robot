@@ -8,7 +8,7 @@ from rclpy.node import Node
 
 from nav_msgs.msg import Path, Odometry, OccupancyGrid
 from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import TwistStamped, Quaternion
+from geometry_msgs.msg import TwistStamped, Quaternion, PoseWithCovarianceStamped
 
 # Try optional SciPy distance transform (for clearance map from /map)
 try:
@@ -135,7 +135,8 @@ class HybridLocalPlanner(Node):
         self.cmd_pub = self.create_publisher(TwistStamped, '/diff_cont/cmd_vel', 10)
 
         self.create_subscription(Path, '/global_path', self.path_callback, 10)
-        self.create_subscription(Odometry, '/odometry/filtered', self.odom_callback, 10)
+        self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.amcl_pose_callback, 10)
+        self.create_subscription(Odometry, '/odometry/filtered', self.odom_velocity_callback, 10)
         self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
         # Optional: static map for clearance-aware evasion gần giống MATLAB
         self.create_subscription(OccupancyGrid, '/map', self.map_callback, 1)
@@ -175,12 +176,16 @@ class HybridLocalPlanner(Node):
 
         self.get_logger().info(f"📌 New global path received: {len(pts)} points. State → TRACKING.")
 
-    def odom_callback(self, msg: Odometry):
+    def amcl_pose_callback(self, msg: PoseWithCovarianceStamped):
+        """Callback for /amcl_pose - get corrected pose from AMCL"""
         pos = msg.pose.pose.position
         ori: Quaternion = msg.pose.pose.orientation
         _, _, yaw = self.quaternion_to_euler(ori)
 
         self.current_pose = np.array([pos.x, pos.y, yaw], dtype=float)
+
+    def odom_velocity_callback(self, msg: Odometry):
+        """Callback for /odometry/filtered - get velocity only"""
         self.current_v = float(msg.twist.twist.linear.x)
         self.current_w = float(msg.twist.twist.angular.z)
 

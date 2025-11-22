@@ -2,13 +2,23 @@
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from sensor_msgs.msg import LaserScan
 
 class ScanThrottle(Node):
     def __init__(self):
         super().__init__('scan_throttle')
-        self.pub = self.create_publisher(LaserScan, '/scan', 10)
-        self.sub = self.create_subscription(LaserScan, '/scan_raw', self.cb, 10)
+        
+        # QoS profile for sensor data (BEST_EFFORT) - compatible with AMCL
+        sensor_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+        
+        self.pub = self.create_publisher(LaserScan, '/scan', qos_profile=sensor_qos)
+        self.sub = self.create_subscription(LaserScan, '/scan_raw', self.cb, qos_profile=sensor_qos)
         self.last_pub = self.get_clock().now()
         self.period = 1.0 / 5.0  # 5Hz
 

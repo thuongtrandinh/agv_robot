@@ -12,15 +12,15 @@ def generate_launch_description():
     # ==========================
     use_sim_time_arg = DeclareLaunchArgument(
         'use_sim_time',
-        default_value='false',  # Set to false for real-time operation
+        default_value='false',  # Real-time operation (đồng bộ với workspace)
         description='Use simulation clock'
     )
 
     # ==========================
-    # Global Planner Node
+    # Global Planner Node (Delay để AMCL và /scan ổn định)
     # ==========================
     global_planner = TimerAction(
-        period=2.0,  # Delay to ensure topics and transforms are ready
+        period=5.0,  # Tăng delay để AMCL publish /amcl_pose ổn định
         actions=[
             Node(
                 package='agv_planner',
@@ -30,23 +30,29 @@ def generate_launch_description():
                 parameters=[
                     {'use_sim_time': LaunchConfiguration('use_sim_time')},
                     {'max_iter': 2000},
-                    {'step_len': 0.10},  # Smaller steps for tight 2x4m map
+                    {'step_len': 0.10},
                     {'goal_sample_rate': 0.15},
-                    {'search_radius': 0.5},  # Smaller search for compact space
+                    {'search_radius': 0.5},
                     {'enable_smoothing': True},
-                    {'path_resolution': 0.08},  # Finer resolution for small map
-                    {'robot_radius': 0.21},  # Robot width 38cm / 2 + margin
-                    {'safety_margin': 0.03},  # Tighter margin for 2x4m space
+                    {'path_resolution': 0.08},
+                    {'robot_radius': 0.23},  # width 46cm/2
+                    {'safety_margin': 0.05},
+                    # Giảm tần số publish path nếu cần
+                    {'publish_rate': 5.0}  # 5Hz thay vì real-time
+                ],
+                remappings=[
+                    # Subscribe từ /amcl_pose thay vì /odometry/filtered
+                    ('/robot_pose', '/amcl_pose')
                 ]
             )
         ]
     )
 
     # ==========================
-    # Local Planner Node
+    # Local Planner Node (Delay sau global planner)
     # ==========================
     local_planner = TimerAction(
-        period=4.0,  # Start after global planner for synchronization
+        period=7.0,  # Delay thêm để global planner publish path trước
         actions=[
             Node(
                 package='agv_planner',
@@ -55,24 +61,36 @@ def generate_launch_description():
                 output='screen',
                 parameters=[
                     {'use_sim_time': LaunchConfiguration('use_sim_time')},
-                    # Velocity limits - conservative for small space
-                    {'max_v': 0.35},  # Match trajectory tracking max velocity
-                    {'max_w': 1.0},  # Moderate turning for tight corners
-                    {'max_accel': 0.5},  # Smooth acceleration
-                    {'max_decel': 1.5},  # Safe deceleration
-                    {'max_angular_accel': 1.5},
-                    {'control_rate': 10.0},  # Match system frequency
+                    # Velocity limits - giảm tốc độ cho an toàn
+                    {'max_v': 0.4},
+                    {'max_w': 0.8},  # Giảm tốc độ góc
+                    {'max_accel': 0.4},
+                    {'max_decel': 1.0},
+                    {'max_angular_accel': 1.2},
+                    {'control_rate': 10.0},  # 10Hz - đồng bộ với yêu cầu
                     # Robot geometry
-                    {'robot_radius': 0.21},  # Actual robot: width 38cm/2 + margin
-                    # Tracking gains
-                    {'track.k_p': 1.5},
-                    {'track.k_d': 2.0},
-                    {'track.k_w': 0.5},
-                    # Braking parameters - shorter for small map
-                    {'brake.start_dist': 0.5},  # Start braking at 0.5m
-                    {'brake.safety_factor': 0.6},
-                    # Goal region - tighter for precision
-                    {'goal.capture_radius': 0.3},  # Smaller goal radius
+                    {'robot_radius': 0.23},  # width 46cm/2
+                    # Tracking gains - giảm để ổn định hơn
+                    {'track.k_p': 1.2},
+                    {'track.k_d': 1.5},
+                    {'track.k_w': 0.4},
+                    # Braking parameters
+                    {'brake.start_dist': 0.6},
+                    {'brake.safety_factor': 0.7},
+                    # Goal region
+                    {'goal.capture_radius': 0.25},
+                    # Evasion parameters - giảm độ nhạy
+                    {'evasion.clearance': 0.4},
+                    {'evasion.lookahead': 0.8},
+                    # Reduce sensor processing frequency
+                    {'scan_throttle': 10.0}  # Process scan at 10Hz max
+                ],
+                remappings=[
+                    # No remapping needed - subscribe to both /amcl_pose and /odometry/filtered directly
+                    # Subscribe từ /scan throttled (5Hz)
+                    ('/scan', '/scan'),
+                    # Publish cmd_vel
+                    ('/cmd_vel', '/diff_cont/cmd_vel')
                 ]
             )
         ]
