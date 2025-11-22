@@ -183,17 +183,13 @@ class GlobalPlannerNode(Node):
             self.get_logger().warn("❌ No map. Cannot plan.")
             return
 
-        # Lấy start pose từ TF
-        try:
-            tr = self.tf_buffer.lookup_transform(self.map_frame_id, "base_footprint", rclpy.time.Time())
-            self.start = np.array([tr.transform.translation.x, tr.transform.translation.y])
-
-            q = tr.transform.rotation
-            _, _, self.start_yaw = self.quaternion_to_euler(q)
-
-        except Exception as e:
-            self.get_logger().error(f"TF error: {e}")
+        # Use AMCL-corrected robot position as start (more accurate than TF)
+        if self.robot_position is None:
+            self.get_logger().warn("❌ No robot pose from AMCL yet. Cannot plan.")
             return
+        
+        self.start = self.robot_position.copy()
+        self.start_yaw = self.robot_orientation
 
         # Goal position
         self.goal = np.array([msg.pose.position.x, msg.pose.position.y])

@@ -53,25 +53,35 @@ def launch_setup(context, *args, **kwargs):
     controller_manager = Node(
         package='controller_manager',
         executable='ros2_control_node',
-        parameters=[controller_yaml],
-        output='screen',
-        remappings=[('/robot_description', '/robot_state_publisher/robot_description')]
+        parameters=[controller_yaml, {'robot_description': robot_description}],
+        output='screen'
     )
 
-    spawner_jsb = Node(
-        package='controller_manager',
-        executable='spawner',
-        arguments=['joint_broad'],
-        output='screen'
+    # Delay spawners to let controller_manager initialize
+    spawner_jsb = TimerAction(
+        period=2.0,
+        actions=[
+            Node(
+                package='controller_manager',
+                executable='spawner',
+                arguments=['joint_broad'],
+                output='screen'
+            )
+        ]
     )
 
     spawner_diff = None
     if spawn_diff:
-        spawner_diff = Node(
-            package='controller_manager',
-            executable='spawner',
-            arguments=['diff_cont'],
-            output='screen'
+        spawner_diff = TimerAction(
+            period=3.0,
+            actions=[
+                Node(
+                    package='controller_manager',
+                    executable='spawner',
+                    arguments=['diff_cont'],
+                    output='screen'
+                )
+            ]
         )
 
     static_odom_tf = None
