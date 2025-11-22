@@ -47,8 +47,8 @@
 	</material>
 	    
 <!--define physical properties for robot-->
-	<xacro:property name="body_length" value="0.38"/>
-	<xacro:property name="body_width" value="0.26"/>
+	<xacro:property name="body_length" value="0.33"/>
+	<xacro:property name="body_width" value="0.38"/>
 	<xacro:property name="body_height" value="0.2"/>
 	<xacro:property name="body_mass" value="12"/>
 	    
@@ -57,17 +57,17 @@
 	<xacro:property name="base_caster_height" value="0.37"/>
 	    
 	<xacro:property name="above_base_caster_length" value="0.25"/>
-	<xacro:property name="above_base_caster_width" value="0.26"/>
+	<xacro:property name="above_base_caster_width" value="0.38"/>
 	<xacro:property name="above_base_caster_height" value="0.0075"/>
 	    
 	<xacro:property name="back_base_caster_length" value="0.0075"/>
-	<xacro:property name="back_base_caster_width" value="0.26"/>
+	<xacro:property name="back_base_caster_width" value="0.38"/>
 	<xacro:property name="back_base_caster_height" value="0.37"/>
 	    	    
 	<xacro:property name="wheel_radius" value="0.05"/>
 	<xacro:property name="wheel_width" value="0.03"/>
 	<xacro:property name="wheel_mass" value="0.3"/>
-	<xacro:property name="wheel_separation" value="0.46"/>
+	<xacro:property name="wheel_separation" value="0.42"/>
 	<xacro:property name="PI" value="3.1415926535897931"/>
 	    
 	<xacro:macro name="cylinder_inertia" params="m r h">
@@ -133,7 +133,7 @@
     <joint name="right_wheel_joint" type="continuous">
         <parent link="base_link"/>
         <child link="right_wheel"/>
-        <origin xyz="0.03 -0.23 0.0" rpy="${PI/2} 0 0"/>
+        <origin xyz="0.03 -0.21 0.0" rpy="${PI/2} 0 0"/>
         <axis xyz="0 0 -1"/>
     </joint>
 
@@ -161,7 +161,7 @@
 	<joint name="left_wheel_joint" type="continuous">
        	<parent link="base_link"/>
         <child link="left_wheel"/>
-        <origin xyz="0.03 0.23 0.0" rpy="${-PI/2} 0.0 0.0"/>
+        <origin xyz="0.03 0.21 0.0" rpy="${-PI/2} 0.0 0.0"/>
         <axis xyz="0 0 1"/>
     </joint>
 
@@ -185,121 +185,8 @@
         </inertial>
 	</link>  
     
-<!--base caster-->
-	<!--above-->
-	<joint name="above_base_caster_joint" type="fixed">
-         	<parent link="base_link"/>
-         	<child link="above_base_caster"/>
-         	<origin xyz="-0.025 0.0 0.40" rpy="0 0 0"/>
-    </joint>
-
-	<link name = "above_base_caster" >
-		<visual> 
-			<geometry>
-				<box size="${above_base_caster_length} ${above_base_caster_width} ${above_base_caster_height}"/>
-			</geometry>
-			<material name = "orange" />
-		</visual>
-
-		<collision> 
-			<geometry>
-				<box size="${above_base_caster_length} ${above_base_caster_width} ${above_base_caster_height}"/>
-			</geometry>
-		</collision>
-
-		<inertial>
-            <mass value="0.2" />
-            <inertia ixx="0.1" ixy="0.0" ixz="0.0"
-                iyy="0.1" iyz="0.0"
-                izz="0.1" />
-        	</inertial>
-	</link>
-
+<!--base caster - REMOVED orange panels-->
 	<!--right-->
-	<joint name="right_base_caster_joint" type="fixed">
-        <parent link="base_link"/>
-        <child link="right_base_caster"/>
-        <origin xyz="-0.025 0.19 0.22" rpy="0 0 0"/>  	
-    </joint>
-
-	<link name = "right_base_caster" >
-		<visual> 
-			<geometry>
-				<box size="${base_caster_length} ${base_caster_width} ${base_caster_height}"/>
-			</geometry>
-			<material name = "orange" />
-		</visual>
-		<collision> 
-			<geometry>
-				<box size="${base_caster_length} ${base_caster_width} ${base_caster_height}"/>
-			</geometry>
-		</collision>
-		<inertial>
-        	<mass value="0.2" />		
-            <inertia ixx="0.1" ixy="0.0" ixz="0.0"
-                iyy="0.1" iyz="0.0"
-                izz="0.1" />
-        	</inertial>
-	</link>
-
-	<!--left-->
-	<joint name="left_base_caster_joint" type="fixed">
-        <parent link="base_link"/>
-        <child link="left_base_caster"/>
-        <origin xyz="-0.025 -0.19 0.22" rpy="0 0 0"/>
-    </joint>
-
-	<link name = "left_base_caster" >
-		<visual> 
-			<geometry>
-				<box size="${base_caster_length} ${base_caster_width} ${base_caster_height}"/>
-			</geometry>
-			<material name = "orange" />
-		</visual>
-
-		<collision> 
-			<geometry>
-				<box size="${base_caster_length} ${base_caster_width} ${base_caster_height}"/>
-			</geometry>
-		</collision>
-
-		<inertial>
-            <mass value="0.2" />
-            <inertia ixx="0.1" ixy="0.0" ixz="0.0"
-                iyy="0.1" iyz="0.0"
-                izz="0.1" />
-        </inertial>
-	</link>
-
-	<!--back-->
-	<joint name="back_base_caster_joint" type="fixed">
-        <parent link="base_link"/>
-        <child link="back_base_caster"/>
-        <origin xyz="0.1 0 0.22" rpy="0 0 0"/>	
-    </joint>
-
-	<link name = "back_base_caster" >
-		<visual> 
-			<geometry>
-				<box size="${back_base_caster_length} ${back_base_caster_width} ${back_base_caster_height}"/>
-			</geometry>
-			<material name = "orange" />
-		</visual>
-
-		<collision> 
-			<geometry>
-				<box size="${base_caster_length} ${base_caster_width} ${base_caster_height}"/>
-			</geometry>
-		</collision>
-
-		<inertial>
-            <mass value="0.5" />
-            <inertia ixx="0.1" ixy="0.0" ixz="0.0"
-            	iyy="0.1" iyz="0.0"
-                izz="0.1" />
-        	</inertial>
-	</link>
-	
 <!--caster wheel-->
 	<joint name = "caster_wheel_joint" type = "fixed" >
 		<parent link = "base_link" />
@@ -331,7 +218,7 @@
 
 <!--lidar-->
 	<joint name="joint_scan" type="fixed">
-		<origin xyz="0 0 0" rpy="0 0 ${PI}"/>
+		<origin xyz="0 0 0.26" rpy="0 0 ${PI}"/>
 		<parent link="base_link"/>
 		<child link="laser"/>
 	</joint>
@@ -418,8 +305,8 @@
 	<joint name="zed2_joint" type="fixed">
 		<parent link="base_link"/>
 		<child link="zed2_link"/>
-		<!-- Camera dời ra phía trước và cao hơn để nhìn thấy ArUco markers -->
-		<origin xyz="0.10 0.0 0.35"/>
+		<!-- Camera 3cm above body top (body top at 0.17) -->
+		<origin xyz="0.10 0.0 0.20"/>
 	</joint>
 
 	<!-- Left Camera (U26) -->
