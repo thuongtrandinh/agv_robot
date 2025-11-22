@@ -15,6 +15,7 @@ from rclpy.node import Node
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Bool
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 import math
 import numpy as np
 
@@ -24,6 +25,13 @@ class TrajectoryPublisher(Node):
     
     def __init__(self):
         super().__init__('trajectory_publisher')
+        
+        latched_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,  # Latch trajectory
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1
+        )
         
         # Parameters
         self.declare_parameter('trajectory_type', 2)  # 1:Circle, 2:Square, 3:Figure-8
@@ -49,7 +57,7 @@ class TrajectoryPublisher(Node):
         self.lead_in_distance = self.get_parameter('lead_in_distance').value
         
         # Publisher
-        self.path_pub = self.create_publisher(Path, '/trajectory', 10)
+        self.path_pub = self.create_publisher(Path, '/trajectory', latched_qos)
         
         # 🚀 NEW: Trajectory control - wait for robot to reach lead-in point
         self.trajectory_active = False  # Start paused - wait for controller signal

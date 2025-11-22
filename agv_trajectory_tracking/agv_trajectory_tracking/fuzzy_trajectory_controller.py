@@ -15,6 +15,7 @@ from geometry_msgs.msg import TwistStamped, PoseWithCovarianceStamped
 import math
 import signal
 import sys
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 
 def quaternion_to_euler(x, y, z, w):
@@ -71,6 +72,27 @@ class FuzzyTrajectoryController(Node):
     
     def __init__(self):
         super().__init__('fuzzy_trajectory_controller')
+        
+        reliable_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+        
+        # Publishers
+        self.cmd_vel_pub = self.create_publisher(
+            TwistStamped, '/diff_cont/cmd_vel', reliable_qos
+        )
+        
+        # Subscribers
+        self.pose_sub = self.create_subscription(
+            PoseWithCovarianceStamped, '/amcl_pose', self.pose_callback, reliable_qos
+        )
+        
+        self.traj_sub = self.create_subscription(
+            Path, '/trajectory', self.trajectory_callback, reliable_qos
+        )
         
         # Parameters
         self.declare_parameter('wheel_base', 0.46)

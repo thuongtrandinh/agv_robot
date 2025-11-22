@@ -4,10 +4,11 @@ from rclpy.node import Node
 
 from nav_msgs.msg import Path, OccupancyGrid, Odometry
 from geometry_msgs.msg import PoseStamped, Quaternion
+from geometry_msgs.msg import PoseWithCovarianceStamped
 
 from tf2_ros import Buffer, TransformListener
 
-from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 import numpy as np
 import math
@@ -16,9 +17,48 @@ from scipy.interpolate import splprep, splev
 from scipy.ndimage import binary_dilation
 
 
-class AgvIrttStarNode(Node):
+class GlobalPlannerNode(Node):
     def __init__(self):
         super().__init__('agv_global_planner')
+        
+        # QoS profiles
+        reliable_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+        
+        latched_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,  # Latch for path
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+        
+        # Publishers
+        self.path_pub = self.create_publisher(Path, '/global_path', latched_qos)
+        
+        # Subscribers
+        self.goal_sub = self.create_subscription(
+            PoseStamped, '/goal_pose', self.goal_callback, reliable_qos
+        )
+        
+        self.pose_sub = self.create_subscription(
+            PoseWithCovarianceStamped, '/amcl_pose', self.pose_callback, reliable_qos
+        )
+        
+        self.map_sub = self.create_subscription(
+            OccupancyGrid, '/map', self.map_callback,
+            QoSProfile(
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                history=HistoryPolicy.KEEP_LAST,
+                depth=1
+            )
+        )
+
+        self.create_subscription(Odometry, '/odometry/filtered', self.odom_callback, 10)
 
         # =======================
         # Tham số ROS 2
@@ -436,7 +476,7 @@ class AgvIrttStarNode(Node):
 
 def main():
     rclpy.init()
-    node = AgvIrttStarNode()
+    node = GlobalPlannerNode()
     rclpy.spin(node)
     rclpy.shutdown()
 
