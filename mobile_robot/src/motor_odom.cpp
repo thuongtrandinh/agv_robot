@@ -18,8 +18,8 @@ public:
     this->declare_parameter<int>("left_index", 0);
     this->declare_parameter<int>("right_index", 1);
     this->declare_parameter<bool>("feedback_is_linear_velocity", true);
-    // New param: odom publish rate (Hz)
-    this->declare_parameter<double>("odom_publish_rate", 13.0);
+    // New param: odom publish rate (Hz) - conservative for reliable hardware performance
+    this->declare_parameter<double>("odom_publish_rate", 10.0);
     // Topics and frames
     this->declare_parameter<std::string>("imu_topic", "/imu");
     this->declare_parameter<std::string>("motor_topic", "/motor_feedback");
@@ -34,7 +34,7 @@ public:
     feedback_linear_ = this->get_parameter("feedback_is_linear_velocity").as_bool();
 
     double pub_rate = this->get_parameter("odom_publish_rate").as_double();
-    if (pub_rate <= 0.0) pub_rate = 13.0;
+    if (pub_rate <= 0.0) pub_rate = 10.0;  // Default 10Hz - conservative for reliable sync
     odom_publish_period_ = rclcpp::Duration::from_seconds(1.0 / pub_rate);
     last_pub_time_ = this->now() - odom_publish_period_;
 

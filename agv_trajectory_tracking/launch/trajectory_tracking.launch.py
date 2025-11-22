@@ -74,6 +74,12 @@ def generate_launch_description():
         description='Enable detailed velocity logging (v, omega, vL, vR)'
     )
     
+    lead_in_distance_arg = DeclareLaunchArgument(
+        'lead_in_distance',
+        default_value='0.15',
+        description='Lead-in point distance before trajectory start (m) - Robot reaches this first'
+    )
+    
     # Get launch configurations
     trajectory_type = LaunchConfiguration('trajectory_type')
     center_x = LaunchConfiguration('center_x')
@@ -84,6 +90,7 @@ def generate_launch_description():
     trajectory_speed = LaunchConfiguration('trajectory_speed')
     enable_traj_publish = LaunchConfiguration('enable_traj_publish')
     verbose_logging = LaunchConfiguration('verbose_logging')
+    lead_in_distance = LaunchConfiguration('lead_in_distance')
     
     # Node 1: Trajectory Publisher
     trajectory_publisher_node = Node(
@@ -96,11 +103,12 @@ def generate_launch_description():
             'center_x': center_x,
             'center_y': center_y,
             'radius': radius,
-            'publish_rate': 20.0,  # FIXED at 20Hz for optimal real-time tracking
+            'publish_rate': 10.0,  # Conservative 10Hz for reliable real-time sync
             'path_points': 200,
             'preview_time': 10.0,
             'enable_publish': enable_traj_publish,  # Control trajectory publishing
             'trajectory_speed': trajectory_speed,  # Configurable trajectory speed
+            'lead_in_distance': lead_in_distance,  # Lead-in point distance
         }],
     )
     
@@ -114,7 +122,7 @@ def generate_launch_description():
             'wheel_base': 0.46,
             'max_linear_vel': max_linear_vel,
             'max_angular_vel': max_angular_vel,
-            'control_frequency': 20.0,
+            'control_frequency': 10.0,  # Conservative 10Hz for reliable real-time sync
             'goal_tolerance': 0.10,  # Reduced from 0.15 for tighter tracking
             'enable_path_publish': True,  # Always enable path publishing to controller
             'verbose_logging': verbose_logging,  # Control detailed velocity logging
@@ -129,8 +137,8 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'max_history': 2000,
-            'update_interval': 25,  # ms - Fast real-time update (40 Hz) for smooth plotting
-            'publish_rate': 20.0,  # Fixed to match trajectory publisher
+            'update_interval': 100,  # ms - 10Hz update for reliable sync
+            'publish_rate': 10.0,  # Conservative 10Hz for reliable real-time sync
         }],
     )
     
@@ -145,6 +153,7 @@ def generate_launch_description():
         trajectory_speed_arg,  # New: control trajectory speed
         enable_traj_publish_arg,
         verbose_logging_arg,
+        lead_in_distance_arg,  # New: lead-in point distance
         
         # Nodes
         trajectory_publisher_node,

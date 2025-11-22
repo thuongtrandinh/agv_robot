@@ -99,6 +99,12 @@ class FuzzyTrajectoryController(Node):
         self.current_path = None
         self.path_received = False
         
+        # 🚀 NEW: Lead-in phase - hold trajectory until robot reaches lead-in point
+        self.lead_in_point_x = None
+        self.lead_in_point_y = None
+        self.waiting_for_lead_in = True
+        self.lead_in_distance_threshold = 0.07  # 7cm - start trajectory when within this distance
+        
         # Shutdown flag
         self.is_shutdown = False
         
@@ -108,6 +114,10 @@ class FuzzyTrajectoryController(Node):
         
         # ROS2 interfaces
         self.cmd_vel_pub = self.create_publisher(TwistStamped, '/diff_cont/cmd_vel', 10)
+        
+        # 🚀 NEW: Signal to trajectory_publisher to start moving
+        from std_msgs.msg import Bool
+        self.traj_start_pub = self.create_publisher(Bool, '/trajectory_start_signal', 10)
         
         # Subscribe to AMCL pose for robot localization
         self.pose_sub = self.create_subscription(
@@ -316,10 +326,26 @@ class FuzzyTrajectoryController(Node):
         )
     
     def path_callback(self, msg):
-        """Receive trajectory"""
+        """Receive trajectory - extract lead-in point (first point before trajectory starts)
+        
+        The trajectory publisher adds a lead-in point as the first pose.
+        Robot must reach this point before the actual trajectory starts moving.
+        """
         self.current_path = msg
         self.path_received = True
-        self.get_logger().info(f'Trajectory: {len(msg.poses)} points')
+        
+        # 🚀 Extract lead-in point (first point in trajectory)
+        if self.lead_in_point_x is None and len(msg.poses) > 0:
+            # First point is the lead-in point
+            self.lead_in_point_x = msg.poses[0].pose.position.x
+            self.lead_in_point_y = msg.poses[0].pose.position.y
+            self.waiting_for_lead_in = True
+            self.get_logger().info(
+                f'Trajectory: {len(msg.poses)} points | '
+                f'Lead-in point at ({self.lead_in_point_x:.3f}, {self.lead_in_point_y:.3f})'
+            )
+        else:
+            self.get_logger().info(f'Trajectory updated: {len(msg.poses)} points')
     
     def find_closest_point(self, path, x, y):
         """Find closest point on path AHEAD of robot (critical for Figure-8 crossover)"""
@@ -482,6 +508,34 @@ class FuzzyTrajectoryController(Node):
             return
         if len(self.current_path.poses) == 0:
             return
+        
+        # 🚀 NEW: Lead-in phase - track to lead-in point, trajectory stays static
+        # Once robot is close enough, signal trajectory_publisher to start moving
+        if self.waiting_for_lead_in and self.lead_in_point_x is not None:
+            dist_to_lead_in = math.sqrt(
+                (self.robot_x - self.lead_in_point_x)**2 + 
+                (self.robot_y - self.lead_in_point_y)**2
+            )
+            
+            if dist_to_lead_in > self.lead_in_distance_threshold:
+                # Not close enough - keep tracking to lead-in point
+                # Trajectory publisher holds static until we signal ready
+                self.get_logger().info(
+                    f'🎯 Lead-in: {dist_to_lead_in*100:.1f}cm to start (need <{self.lead_in_distance_threshold*100:.0f}cm)',
+                    throttle_duration_sec=0.5
+                )
+                # Continue to normal tracking logic below (will track to lead-in point)
+            else:
+                # Close enough - signal trajectory to start!
+                self.waiting_for_lead_in = False
+                self.get_logger().info(
+                    f'✅ START! Robot at lead-in point ({dist_to_lead_in*100:.1f}cm) - Signaling trajectory to move!'
+                )
+                # 🚀 Publish signal to trajectory_publisher to start moving
+                from std_msgs.msg import Bool
+                start_signal = Bool()
+                start_signal.data = True
+                self.traj_start_pub.publish(start_signal)
         
         # Compute errors
         e_d, e_theta_deg = self.compute_tracking_errors()

@@ -71,5 +71,5 @@ amcl:
     recovery_alpha_slow: 0.001  # Slow filter to detect convergence
     recovery_alpha_fast: 0.1    # Fast filter to adapt quickly
 
-    # Pose publishing - Match trajectory controller frequency for real-time feedback
-    save_pose_rate: 20.0  # 20 Hz for trajectory tracking (was 0.5 Hz)
+    # Pose publishing - Synchronized with odometry/filtered frequency
+    save_pose_rate: 10.0  # 10 Hz - conservative rate for reliable synchronization
