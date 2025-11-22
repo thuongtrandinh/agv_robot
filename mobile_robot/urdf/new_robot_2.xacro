@@ -47,8 +47,8 @@
 	</material>
 	    
 <!--define physical properties for robot-->
-	<xacro:property name="body_length" value="0.31"/>
-	<xacro:property name="body_width" value="0.4"/>
+	<xacro:property name="body_length" value="0.38"/>
+	<xacro:property name="body_width" value="0.26"/>
 	<xacro:property name="body_height" value="0.2"/>
 	<xacro:property name="body_mass" value="12"/>
 	    
@@ -57,11 +57,11 @@
 	<xacro:property name="base_caster_height" value="0.37"/>
 	    
 	<xacro:property name="above_base_caster_length" value="0.25"/>
-	<xacro:property name="above_base_caster_width" value="0.4"/>
+	<xacro:property name="above_base_caster_width" value="0.26"/>
 	<xacro:property name="above_base_caster_height" value="0.0075"/>
 	    
 	<xacro:property name="back_base_caster_length" value="0.0075"/>
-	<xacro:property name="back_base_caster_width" value="0.4"/>
+	<xacro:property name="back_base_caster_width" value="0.26"/>
 	<xacro:property name="back_base_caster_height" value="0.37"/>
 	    	    
 	<xacro:property name="wheel_radius" value="0.05"/>
