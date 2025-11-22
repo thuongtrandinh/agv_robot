@@ -5,6 +5,7 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
+        - /TF1
         - /TF1/Frames1
         - /LaserScan1/Topic1
         - /ParticleCloud1/Topic1
@@ -54,10 +55,6 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: true
-        above_base_caster:
-          Value: true
-        back_base_caster:
-          Value: true
         base_footprint:
           Value: true
         base_link:
@@ -66,21 +63,15 @@ Visualization Manager:
           Value: true
         chassis:
           Value: true
-        face_link:
-          Value: true
         imu_link:
           Value: true
         laser:
-          Value: true
-        left_base_caster:
           Value: true
         left_wheel:
           Value: true
         map:
           Value: true
         odom:
-          Value: true
-        right_base_caster:
           Value: true
         right_wheel:
           Value: true
@@ -100,22 +91,13 @@ Visualization Manager:
           odom:
             base_footprint:
               base_link:
-                above_base_caster:
-                  {}
-                back_base_caster:
-                  {}
                 caster_wheel:
                   {}
                 chassis:
-                  face_link:
-                    {}
+                  {}
                 laser:
                   {}
-                left_base_caster:
-                  {}
                 left_wheel:
-                  {}
-                right_base_caster:
                   {}
                 right_wheel:
                   {}
@@ -160,11 +142,6 @@ Visualization Manager:
           Show Trail: false
           Value: true
         chassis:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        face_link:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -352,7 +329,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 3.2500722408294678
+      Distance: 14.066886901855469
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -367,10 +344,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.6347977519035339
+      Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 0.008275394327938557
+      Yaw: 3.256437063217163
     Saved: ~
 Window Geometry:
   Displays:

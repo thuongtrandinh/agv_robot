@@ -30,13 +30,13 @@ def generate_launch_description():
                 parameters=[
                     {'use_sim_time': LaunchConfiguration('use_sim_time')},
                     {'max_iter': 2000},
-                    {'step_len': 0.15},
+                    {'step_len': 0.10},  # Smaller steps for tight 2x4m map
                     {'goal_sample_rate': 0.15},
-                    {'search_radius': 1.0},
+                    {'search_radius': 0.5},  # Smaller search for compact space
                     {'enable_smoothing': True},
-                    {'path_resolution': 0.1},
-                    {'robot_radius': 0.25},
-                    {'safety_margin': 0.05},
+                    {'path_resolution': 0.08},  # Finer resolution for small map
+                    {'robot_radius': 0.21},  # Robot width 38cm / 2 + margin
+                    {'safety_margin': 0.03},  # Tighter margin for 2x4m space
                 ]
             )
         ]
@@ -55,24 +55,24 @@ def generate_launch_description():
                 output='screen',
                 parameters=[
                     {'use_sim_time': LaunchConfiguration('use_sim_time')},
-                    # Velocity limits
-                    {'max_v': 0.8},
-                    {'max_w': 0.8},
-                    {'max_accel': 0.8},
-                    {'max_decel': 2.0},
-                    {'max_angular_accel': 2.0},
-                    {'control_rate': 20.0},
+                    # Velocity limits - conservative for small space
+                    {'max_v': 0.35},  # Match trajectory tracking max velocity
+                    {'max_w': 1.0},  # Moderate turning for tight corners
+                    {'max_accel': 0.5},  # Smooth acceleration
+                    {'max_decel': 1.5},  # Safe deceleration
+                    {'max_angular_accel': 1.5},
+                    {'control_rate': 10.0},  # Match system frequency
                     # Robot geometry
-                    {'robot_radius': 0.25},
+                    {'robot_radius': 0.21},  # Actual robot: width 38cm/2 + margin
                     # Tracking gains
                     {'track.k_p': 1.5},
                     {'track.k_d': 2.0},
                     {'track.k_w': 0.5},
-                    # Braking parameters
-                    {'brake.start_dist': 1.0},
+                    # Braking parameters - shorter for small map
+                    {'brake.start_dist': 0.5},  # Start braking at 0.5m
                     {'brake.safety_factor': 0.6},
-                    # Goal region
-                    {'goal.capture_radius': 0.5},
+                    # Goal region - tighter for precision
+                    {'goal.capture_radius': 0.3},  # Smaller goal radius
                 ]
             )
         ]
