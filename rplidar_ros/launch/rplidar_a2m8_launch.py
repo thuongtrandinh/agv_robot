@@ -18,7 +18,7 @@ def generate_launch_description():
     inverted = LaunchConfiguration('inverted', default='false')
     angle_compensate = LaunchConfiguration('angle_compensate', default='true')
     scan_mode = LaunchConfiguration('scan_mode', default='Sensitivity')
-    scan_frequency = LaunchConfiguration('scan_frequency', default='7.0')  # Giảm xuống 7Hz
+    scan_frequency = LaunchConfiguration('scan_frequency', default='8.0')  # Max 8Hz cho RPLidar A2M8
 
     return LaunchDescription([
 

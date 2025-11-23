@@ -15,7 +15,7 @@ public:
     // Parameters (tune as needed)
     this->declare_parameter<double>("wheel_radius", 0.05);
     this->declare_parameter<double>("wheel_separation", 0.46);
-    // New: odom publish rate 50Hz for smooth tracking
+    // Throttle STM32 high-frequency data (>100Hz) to reasonable rate
     this->declare_parameter<double>("odom_publish_rate", 50.0);
     // Topics and frames
     this->declare_parameter<std::string>("sensor_data_topic", "/sensor_data");
@@ -30,7 +30,8 @@ public:
     double pub_rate = this->get_parameter("odom_publish_rate").as_double();
     if (pub_rate <= 0.0) pub_rate = 50.0;  // Default 50Hz for smooth real-time tracking
     odom_publish_period_ = rclcpp::Duration::from_seconds(1.0 / pub_rate);
-    last_pub_time_ = this->now() - odom_publish_period_;
+    // Initialize to allow immediate first publish
+    last_pub_time_ = this->now() - odom_publish_period_ - rclcpp::Duration::from_seconds(1.0);
 
     std::string sensor_topic = this->get_parameter("sensor_data_topic").as_string();
     std::string odom_topic = this->get_parameter("odom_topic").as_string();
@@ -151,12 +152,6 @@ private:
     odom.twist.covariance[0] = 1e-3;  // vx
     odom.twist.covariance[35] = 1e-3; // vyaw
 
-    // Throttle publishing to target rate (50Hz)
-    if (odom_publish_period_.seconds() <= 0.0 || (now - last_pub_time_) >= odom_publish_period_) {
-      odom_pub_->publish(odom);
-      last_pub_time_ = now;
-    }
-
     // ========== PUBLISH IMU MESSAGE ==========
     // Republish IMU data for EKF fusion (orientation = integrated yaw from above)
     sensor_msgs::msg::Imu imu_msg;
@@ -188,9 +183,22 @@ private:
     imu_msg.linear_acceleration_covariance[4] = 0.1;  // acc_y
     imu_msg.linear_acceleration_covariance[8] = 0.1;  // acc_z
 
-    imu_pub_->publish(imu_msg);
+    // Throttle publishing to prevent overload (STM32 sends >100Hz, we publish at target rate)
+    // Use nanoseconds for precise timing to avoid accumulation errors
+    auto time_since_last_pub = now - last_pub_time_;
+    if (time_since_last_pub.nanoseconds() >= odom_publish_period_.nanoseconds()) {
+      odom_pub_->publish(odom);
+      imu_pub_->publish(imu_msg);
+      // Update to next target time instead of "now" to maintain consistent rate
+      last_pub_time_ = last_pub_time_ + odom_publish_period_;
+      
+      // Safety: if we're falling behind, reset to current time
+      if ((now - last_pub_time_).nanoseconds() > odom_publish_period_.nanoseconds()) {
+        last_pub_time_ = now;
+      }
+    }
 
-    // Update last integration time
+    // Update last integration time (always update for accurate dt calculation)
     last_time_ = now;
   }
 

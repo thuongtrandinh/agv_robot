@@ -123,25 +123,22 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # ============================
-    # Motor Odometry (publishes /diff_cont/odom at reduced rate)
+    # STM32 Odometry (subscribes /sensor_data, publishes /diff_cont/odom + /imu at 50Hz)
     # ============================
-    motor_odom = Node(
+    stm32_odom = Node(
         package='mobile_robot',
-        executable='motor_odom',
-        name='motor_odom',
+        executable='stm32_odom',
+        name='stm32_odom',
         output='screen',
         parameters=[
             {'wheel_radius': 0.05},
             {'wheel_separation': 0.46},
-            {'left_index': 1},
-            {'right_index': 0},
-            {'feedback_is_linear_velocity': True},
-            {'imu_topic': '/imu'},
-            {'motor_topic': '/motor_feedback'},
+            {'sensor_data_topic': '/sensor_data'},
             {'odom_topic': '/diff_cont/odom'},
+            {'imu_topic': '/imu'},
             {'odom_frame': 'odom'},
             {'base_frame': 'base_footprint'},
-            {'odom_publish_rate': 15.0},  # Reduced from 20Hz to 15Hz
+            {'odom_publish_rate': 50.0},  # High frequency for smooth tracking
         ]
     )
 
@@ -190,11 +187,11 @@ def launch_setup(context, *args, **kwargs):
     if static_odom_tf:
         nodes.insert(1, static_odom_tf)
     
-    # Add sensor nodes (LIDAR first, then throttle, then motor_odom)
+    # Add sensor nodes (LIDAR first, then throttle, then stm32_odom)
     nodes.extend([
         lidar_node,
         scan_throttle,
-        motor_odom,
+        stm32_odom,
         aruco_detector_delayed
     ])
     
