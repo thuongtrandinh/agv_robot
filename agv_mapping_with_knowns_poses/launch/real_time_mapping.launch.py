@@ -38,21 +38,20 @@ def generate_launch_description():
         "ekf.yaml"
     )
     
-    # IMU Republisher - DISABLED (IMU hardware removed)
-    # imu_republisher = Node(
-    #     package="agv_localization",
-    #     executable="imu_republisher",
-    #     name="imu_republisher",
-    #     output="screen",
-    #     parameters=[
-    #         {"use_sim_time": use_sim_time},
-    #         {"input_topic": "/imu"},
-    #         {"output_topic": "/imu_with_covariance"},
-    #         {"orientation_covariance": 0.01},
-    #         {"angular_velocity_covariance": 0.02},
-    #         {"linear_acceleration_covariance": 0.1}
-    #     ]
-    # )
+    imu_republisher = Node(
+        package="agv_localization",
+        executable="imu_republisher",
+        name="imu_republisher",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"input_topic": "/imu"},
+            {"output_topic": "/imu_with_covariance"},
+            {"orientation_covariance": 0.01},
+            {"angular_velocity_covariance": 0.02},
+            {"linear_acceleration_covariance": 0.1}
+        ]
+    )
     
     # Odometry Republisher (balanced covariance - trust encoders but allow noise filtering)
     odom_republisher = Node(
@@ -155,7 +154,7 @@ def generate_launch_description():
     return LaunchDescription([
         use_sim_time_arg,
         slam_config_arg,
-        # imu_republisher,  # Disabled - IMU hardware removed
+        imu_republisher,  
         odom_republisher,
         ekf_filter,
         nav2_map_saver,
