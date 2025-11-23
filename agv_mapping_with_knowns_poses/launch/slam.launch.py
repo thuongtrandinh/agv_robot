@@ -73,7 +73,7 @@ def generate_launch_description():
         ]
     )
     
-    # EKF Node (reduced frequency to match odom rate)
+    # EKF Node (high frequency to match stm32_odom rate)
     ekf_filter = Node(
         package="robot_localization",
         executable="ekf_node",
@@ -82,7 +82,7 @@ def generate_launch_description():
         parameters=[
             ekf_config_file,
             {"use_sim_time": use_sim_time},
-            {"frequency": 15.0}  # Match motor_odom rate
+            {"frequency": 50.0}  # Match stm32_odom rate (~57Hz)
         ]
     )
     
@@ -101,9 +101,9 @@ def generate_launch_description():
     )
 
     # SLAM Toolbox (delayed to ensure /scan and TF are stable)
-    # INCREASED delay to 8s to wait for odometry/filtered to stabilize
+    # Reduced delay since high-frequency odometry stabilizes faster
     slam_toolbox_delayed = TimerAction(
-        period=8.0,  # Wait 8 seconds for EKF to stabilize
+        period=5.0,  # 5 seconds sufficient with 50Hz odometry
         actions=[
             Node(
                 package="slam_toolbox",

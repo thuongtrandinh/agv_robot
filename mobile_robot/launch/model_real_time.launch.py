@@ -95,7 +95,7 @@ def launch_setup(context, *args, **kwargs):
         )
 
     # ============================
-    # LIDAR (start first, publishes /scan_raw)
+    # LIDAR (publishes directly to /scan at max rate ~11Hz)
     # ============================
     lidar_node = Node(
         package='rplidar_ros',
@@ -106,24 +106,14 @@ def launch_setup(context, *args, **kwargs):
             {'serial_baudrate': lidar_baud},
             {'frame_id': 'laser'},
             {'angle_compensate': True},
-            {'topic_name': '/scan_raw'},  # Raw scan from LIDAR
-            {'scan_frequency': 8.0}  # Reduce LIDAR frequency to 8Hz
+            {'topic_name': '/scan'},  # Direct publish to /scan (no throttle)
+            {'scan_frequency': 10.0}  # Max stable frequency for A2M8
         ],
         output='screen'
     )
 
     # ============================
-    # Scan Throttle (subscribes /scan_raw, publishes /scan at 5Hz)
-    # ============================
-    scan_throttle = Node(
-        package='mobile_robot',
-        executable='scan_throttle.py',
-        name='scan_throttle',
-        output='screen'
-    )
-
-    # ============================
-    # STM32 Odometry (subscribes /sensor_data, publishes /diff_cont/odom + /imu at 50Hz)
+    # STM32 Odometry (subscribes /sensor_data, publishes /diff_cont/odom + /imu at ~57Hz)
     # ============================
     stm32_odom = Node(
         package='mobile_robot',
@@ -187,10 +177,9 @@ def launch_setup(context, *args, **kwargs):
     if static_odom_tf:
         nodes.insert(1, static_odom_tf)
     
-    # Add sensor nodes (LIDAR first, then throttle, then stm32_odom)
+    # Add sensor nodes (LIDAR and STM32 odometry)
     nodes.extend([
         lidar_node,
-        scan_throttle,
         stm32_odom,
         aruco_detector_delayed
     ])

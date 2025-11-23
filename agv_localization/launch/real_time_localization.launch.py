@@ -33,7 +33,7 @@ def launch_setup(context, *args, **kwargs):
         "lab208b3.yaml"
     ])
 
-    # EKF for sensor fusion (reduced frequency)
+    # EKF for sensor fusion (high frequency for smooth tracking)
     ekf_config_file = os.path.join(pkg_dir, "config", "ekf.yaml")
     ekf_node = Node(
         package="robot_localization",
@@ -43,7 +43,7 @@ def launch_setup(context, *args, **kwargs):
         parameters=[
             ekf_config_file,
             {"use_sim_time": use_sim_time},
-            {"frequency": 15.0}  # Match motor_odom rate
+            {"frequency": 50.0}  # Match stm32_odom rate (~57Hz)
         ],
     )
     
@@ -60,7 +60,7 @@ def launch_setup(context, *args, **kwargs):
 
     # Delay AMCL activation to ensure transforms are available
     amcl_delayed = TimerAction(
-        period=5.0,  # Increased delay to 5 seconds for more reliable startup
+        period=3.0,  # Reduced to 3s - high-frequency odometry stabilizes faster
         actions=[
             Node(
                 package="nav2_amcl",
