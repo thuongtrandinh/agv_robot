@@ -80,20 +80,6 @@ class FuzzyTrajectoryController(Node):
             depth=10
         )
         
-        # Publishers
-        self.cmd_vel_pub = self.create_publisher(
-            TwistStamped, '/diff_cont/cmd_vel', reliable_qos
-        )
-        
-        # Subscribers
-        self.pose_sub = self.create_subscription(
-            PoseWithCovarianceStamped, '/amcl_pose', self.pose_callback, reliable_qos
-        )
-        
-        self.traj_sub = self.create_subscription(
-            Path, '/trajectory', self.trajectory_callback, reliable_qos
-        )
-        
         # Parameters
         self.declare_parameter('wheel_base', 0.46)
         self.declare_parameter('max_linear_vel', 1.0)
@@ -102,6 +88,7 @@ class FuzzyTrajectoryController(Node):
         self.declare_parameter('goal_tolerance', 0.15)
         self.declare_parameter('enable_path_publish', True)  # Enable/disable path publishing
         self.declare_parameter('verbose_logging', True)       # Enable detailed velocity logging
+        self.declare_parameter('auto_approach', True)          # Auto-navigate to lead-in point
         
         self.wheel_base = self.get_parameter('wheel_base').value
         self.max_linear_vel = self.get_parameter('max_linear_vel').value
@@ -110,9 +97,14 @@ class FuzzyTrajectoryController(Node):
         self.goal_tolerance = self.get_parameter('goal_tolerance').value
         self.enable_path_publish = self.get_parameter('enable_path_publish').value
         self.verbose_logging = self.get_parameter('verbose_logging').value
+        self.auto_approach = self.get_parameter('auto_approach').value
         
         # 🔧 CRITICAL: Maximum wheel velocity constraint (1.0 m/s per wheel)
         self.max_wheel_vel = 1.0  # m/s - hardware limit for each motor
+        
+        # Approach mode state (navigate to lead-in point before trajectory)
+        self.in_approach_mode = self.auto_approach  # Start in approach mode if enabled
+        self.approach_complete = not self.auto_approach  # Skip if auto_approach disabled
         
         # Robot state (hybrid: odometry + AMCL correction)
         self.robot_x = 0.0
@@ -145,8 +137,8 @@ class FuzzyTrajectoryController(Node):
         self.startup_delay = 4.0  # seconds - Wait for trajectory publisher to start
         self.controller_ready = False
         
-        # ROS2 interfaces
-        self.cmd_vel_pub = self.create_publisher(TwistStamped, '/diff_cont/cmd_vel', 10)
+        # ROS2 publishers
+        self.cmd_vel_pub = self.create_publisher(TwistStamped, '/diff_cont/cmd_vel', reliable_qos)
         
         # 🚀 NEW: Signal to trajectory_publisher to start moving
         from std_msgs.msg import Bool
@@ -516,6 +508,15 @@ class FuzzyTrajectoryController(Node):
         
         return e_d, e_theta_deg
     
+    def publish_cmd_vel(self, v, omega):
+        """Publish velocity command"""
+        cmd_vel = TwistStamped()
+        cmd_vel.header.stamp = self.get_clock().now().to_msg()
+        cmd_vel.header.frame_id = 'base_link'
+        cmd_vel.twist.linear.x = v
+        cmd_vel.twist.angular.z = omega
+        self.cmd_vel_pub.publish(cmd_vel)
+    
     def wheel_to_twist(self, v_left, v_right):
         """Convert wheel velocities to twist"""
         v = (v_left + v_right) / 2.0
@@ -575,7 +576,45 @@ class FuzzyTrajectoryController(Node):
         if len(self.current_path.poses) == 0:
             return
         
-        # 🚀 NEW: Lead-in phase - track to lead-in point, trajectory stays static
+        # 🚀 APPROACH MODE: Navigate directly to lead-in point before tracking
+        if self.in_approach_mode and self.lead_in_point_x is not None:
+            dist_to_lead_in = math.sqrt(
+                (self.robot_x - self.lead_in_point_x)**2 + 
+                (self.robot_y - self.lead_in_point_y)**2
+            )
+            
+            if dist_to_lead_in > self.lead_in_distance_threshold:
+                # Navigate to lead-in point using simple P controller
+                dx = self.lead_in_point_x - self.robot_x
+                dy = self.lead_in_point_y - self.robot_y
+                target_angle = math.atan2(dy, dx)
+                angle_error = target_angle - self.robot_theta
+                # Normalize angle error to [-pi, pi]
+                angle_error = math.atan2(math.sin(angle_error), math.cos(angle_error))
+                
+                # Simple navigation control
+                v = min(0.3, 0.5 * dist_to_lead_in)  # P control for forward
+                omega = 2.0 * angle_error  # P control for turning
+                
+                # Limit velocities
+                v = max(0.0, min(v, self.max_linear_vel))
+                omega = max(-self.max_angular_vel, min(omega, self.max_angular_vel))
+                
+                self.publish_cmd_vel(v, omega)
+                self.get_logger().info(
+                    f'🚶 Approaching lead-in: {dist_to_lead_in*100:.1f}cm (v={v:.2f}, ω={omega:.2f})',
+                    throttle_duration_sec=0.5
+                )
+                return
+            else:
+                # Reached lead-in point
+                self.in_approach_mode = False
+                self.approach_complete = True
+                self.get_logger().info(
+                    f'✅ Reached lead-in point! Switching to trajectory tracking mode.'
+                )
+        
+        # 🚀 LEAD-IN PHASE: track to lead-in point, trajectory stays static
         # Once robot is close enough, signal trajectory_publisher to start moving
         if self.waiting_for_lead_in and self.lead_in_point_x is not None:
             dist_to_lead_in = math.sqrt(

@@ -138,26 +138,52 @@ osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
   .stack_size = 3000 * 4,
+  .priority = (osPriority_t) osPriorityHigh,
+};
+/* Definitions for imuTask */
+osThreadId_t imuTaskHandle;
+const osThreadAttr_t imuTask_attributes = {
+  .name = "imuTask",
+  .stack_size = 2048 * 4,
+  .priority = (osPriority_t) osPriorityAboveNormal,
+};
+/* Definitions for imuCalibTask */
+osThreadId_t imuCalibTaskHandle;
+const osThreadAttr_t imuCalibTask_attributes = {
+  .name = "imuCalibTask",
+  .stack_size = 2048 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for motorTask */
+osThreadId_t motorTaskHandle;
+const osThreadAttr_t motorTask_attributes = {
+  .name = "motorTask",
+  .stack_size = 1536 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* USER CODE BEGIN PV */
 
 osMutexId_t i2c_mutex;
 
-rcl_publisher_t imu_pub;
-rcl_publisher_t motor_feedback_pub;
+rcl_publisher_t sensor_data_pub;  // Gộp IMU + motor vào 1 topic
 rcl_subscription_t cmd_vel_sub;
 rclc_executor_t executor;
 
-sensor_msgs__msg__Imu imu_msg;
+std_msgs__msg__Float32MultiArray sensor_data_msg;  // [gyro_x, gyro_y, gyro_z, acc_x, acc_y, acc_z, speed_left, speed_right]
 geometry_msgs__msg__TwistStamped cmd_vel_msg;
-std_msgs__msg__Float32MultiArray motor_feedback_msg;
 
 //Parameters Robot
 const float pi = 3.14159265359;
 const float wheel_radius = 0.05;//0.143m
 const float wheel_base = 0.455;
-static float motor_fb_buf[2] = {0};
+static float sensor_data_buf[8] = {0};  // [gyro_x, gyro_y, gyro_z, acc_x, acc_y, acc_z, speed_left, speed_right]
+
+volatile uint8_t calibration_done = 0;
+extern float speed_left, speed_right;
+
+// Debug counters
+volatile uint32_t imu_read_counter = 0;
+volatile int16_t last_gyro_z_raw = 0;
 
 //Parameters PID & PWM
 int PPR = 998;//=250x4/pulse per revolution
@@ -168,10 +194,14 @@ float Kd = 2;//1.55
 
 
 //Parameters PID for Wheel's Motors
-float Kp_L = 1500, Ki_L = 5000, Kd_L = 3.5;   // <-- Tinh chỉnh lại motor TRÁI
-float Kp_R = 810, Ki_R = 2500, Kd_R = 3.7;   // <-- Tinh chỉnh lại motor PHẢI
+float Kp_L = 880, Ki_L = 4000, Kd_L = 3.5;   // <-- Tinh chỉnh lại motor TRÁI
+float Kp_R = 1000, Ki_R = 3500, Kd_R = 3.7;   // <-- Tinh chỉnh lại motor PHẢI
 
 float setpoint = 0;
+
+// Debug flags
+volatile uint8_t pid_running = 0;
+volatile uint8_t pwm_running = 0;
 
 //Right
 float enc_right=0, pre_enc_right = 0;
@@ -200,6 +230,9 @@ static void MX_TIM4_Init(void);
 static void MX_USART6_UART_Init(void);
 static void MX_I2C1_Init(void);
 void StartDefaultTask(void *argument);
+void StartTask02(void *argument);
+void StartTask03(void *argument);
+void StartTask04(void *argument);
 
 /* USER CODE BEGIN PFP */
 void PID_Calculate1(void);
@@ -207,39 +240,39 @@ void PID_Calculate2(void);
 void PWM_Calculate1(void);
 void PWM_Calculate2(void);
 void updateRPY(void);
+void updateRPY(void);
 
 void cmd_vel_callback(const void *msgin)
 {
-    const geometry_msgs__msg__TwistStamped *msg =
-        (const geometry_msgs__msg__TwistStamped *)msgin;
+    const geometry_msgs__msg__TwistStamped *msg = (const geometry_msgs__msg__TwistStamped *)msgin;
 
-    // Lấy vận tốc
-    float v = msg->twist.linear.x;     // m/s
-    float w = msg->twist.angular.z;    // rad/s
+    // Giải mã vận tốc tuyến tính & góc từ twist.linear và twist.angular
+    float v = msg->twist.linear.x;   // m/s
+    float w = msg->twist.angular.z;  // rad/s
 
-    // ==============================
-    //  ĐẢO CHIỀU CHẠY TỚI CỦA ROBOT
-    // ==============================
-    v = -v;
-
-
-    // Tính tốc độ bánh
-    setpoint_left  = v - (wheel_base / 2.0f) * w;
-    setpoint_right = v + (wheel_base / 2.0f) * w;
+    // Tính vận tốc từng bánh - đảo cả v và w để sửa chiều tiến và góc quay
+    // ⚠️ Atomic update: disable interrupts để cập nhật đồng thời
+    __disable_irq();
+    setpoint_left  = ((-v) - (wheel_base / 2.0f) * (w));
+    setpoint_right = ((-v) + (wheel_base / 2.0f) * (w));
+    __enable_irq();
 }
 
 void ImuCalibTask(void *argument)
 {
-	HAL_GPIO_WritePin(GPIOD, LD6_Pin, GPIO_PIN_SET);
-	osMutexAcquire(i2c_mutex, osWaitForever);
+    // Calibrate IMU - không dùng LED để tránh conflict với MotorControlTask
     MPU6050_Calibrate(&MPU6050, &base_x_gyro, &base_y_gyro, &base_z_gyro);
-    HAL_GPIO_WritePin(GPIOD, LD6_Pin, GPIO_PIN_RESET);
-    osMutexRelease(i2c_mutex);
+    calibration_done = 1;
     osThreadExit();  // kết thúc task sau khi calibrate xong
 }
 
 void ImuTask(void *argument)
 {
+    // Đợi calibration hoàn thành trước khi xử lý
+    while (!calibration_done) {
+        osDelay(10);
+    }
+
     // Khởi tạo mốc thời gian ban đầu
 	t_last = osKernelGetTickCount();
 
@@ -248,6 +281,10 @@ void ImuTask(void *argument)
         // Đọc IMU (đã convert sang m/s2 và deg/s trong MPU6050.c)
         osMutexAcquire(i2c_mutex, osWaitForever);
         MPU6050_ProcessData(&MPU6050);
+
+        // Debug: increment counter và lưu raw gyro Z
+        imu_read_counter++;
+        last_gyro_z_raw = MPU6050.gyro_z_raw;
 
         // Lưu gia tốc (m/s^2) vào biến global
         g_accel_angle_x = MPU6050.acc_x;
@@ -260,8 +297,8 @@ void ImuTask(void *argument)
         g_gyro_angle_z  = MPU6050.gyro_z;
         osMutexRelease(i2c_mutex);
 
-        // Cập nhật roll / pitch / yaw + quaternion
-        updateRPY();
+        // Không cần tính quaternion - IPC sẽ xử lý
+        // updateRPY(); // Bỏ để giảm CPU overhead
 
         osDelay(10); // ~100 Hz
     }
@@ -269,13 +306,19 @@ void ImuTask(void *argument)
 
 void MotorControlTask(void *argument)
 {
-    for(;;)
-    {
-        PID_Calculate1();
-        PID_Calculate2();
+    // Reset debug flags
+    pid_running = 0;
+    pwm_running = 0;
 
-        PWM_Calculate1();
-        PWM_Calculate2();
+  for(;;)
+  {
+      // BƯỚC 1: Tính cả 2 PID trước (đồng bộ tính toán)
+      PID_Calculate2();  // Right
+      PID_Calculate1();  // Left        // BƯỚC 2: Disable interrupts để xuất PWM đồng thời
+        __disable_irq();
+        PWM_Calculate2();  // Right
+        PWM_Calculate1();  // Left
+        __enable_irq();
 
         osDelay(10);	// 100Hz = 10ms
     }
@@ -331,14 +374,65 @@ int main(void)
   HAL_TIM_PWM_Start(PWM_TIM, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(PWM_TIM, TIM_CHANNEL_3);
 
-  /* IMU */
-  MPU6050_init();
+  /* IMU - Try init but don't block if failed */
+  uint8_t imu_ok = MPU6050_init();
+  
+  if (!imu_ok) {
+      // ⚠️ MPU6050 không kết nối - chỉ báo lỗi, KHÔNG block hệ thống
+      HAL_GPIO_WritePin(GPIOD, LD6_Pin, GPIO_PIN_SET);
+      // Hệ thống vẫn chạy để test motor
+  } else {
+      set_last_read_angle_data(0, 0, 0, 0, 0, 0, 0);
+  }
 
-  set_last_read_angle_data(0, 0, 0, 0, 0, 0, 0);
-
-  /* Motor Speed */
-  setpoint_left = 0.0;   //(m/s)
-  setpoint_right = 0.0;	 //(m/s)
+  /* Reset tất cả biến encoder và PID về 0 khi reset STM32 */
+  // Reset encoder counters
+  __HAL_TIM_SET_COUNTER(&htim1, 0);  // Left encoder
+  __HAL_TIM_SET_COUNTER(&htim4, 0);  // Right encoder
+  
+  // Reset encoder variables
+  enc_right = 0;
+  pre_enc_right = 0;
+  delta_right = 0;
+  enc_left = 0;
+  pre_enc_left = 0;
+  delta_left = 0;
+  
+  // Reset speed variables
+  speed_left = 0.0f;
+  speed_right = 0.0f;
+  setpoint_left = 0.0f;
+  setpoint_right = 0.0f;
+  
+  // Reset PID variables - Right motor
+  Error1 = 0;
+  pre_Error1 = 0;
+  pre_pre_Error1 = 0;
+  P_part1 = 0;
+  I_part1 = 0;
+  D_part1 = 0;
+  duty_cycle_right = 0;
+  duty_right = 0;
+  pre_duty_right = 0;
+  
+  // Reset PID variables - Left motor
+  Error2 = 0;
+  pre_Error2 = 0;
+  pre_pre_Error2 = 0;
+  P_part2 = 0;
+  I_part2 = 0;
+  D_part2 = 0;
+  duty_cycle_left = 0;
+  duty_left = 0;
+  pre_duty_left = 0;
+  
+  // Reset IMU angles
+  roll = 0.0f;
+  pitch = 0.0f;
+  yaw = 0.0f;
+  
+  // Force calibration_done = 1 để MotorControlTask có thể chạy ngay
+  calibration_done = 1;
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -368,51 +462,21 @@ int main(void)
   /* creation of defaultTask */
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
+  /* creation of imuTask */
+  imuTaskHandle = osThreadNew(StartTask02, NULL, &imuTask_attributes);
+
+  /* creation of imuCalibTask */
+  imuCalibTaskHandle = osThreadNew(StartTask03, NULL, &imuCalibTask_attributes);
+
+  /* creation of motorTask */
+  motorTaskHandle = osThreadNew(StartTask04, NULL, &motorTask_attributes);
+
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
-
-  osThreadId_t imuTaskHandle;
-
-  const osThreadAttr_t imuCalibTask_attributes = {
-    .name = "imuCalibTask",
-    .stack_size = 2048 * 4,
-    .priority = (osPriority_t) osPriorityHigh
-  };
-  osThreadNew(ImuCalibTask, NULL, &imuCalibTask_attributes);
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
   /* add events, ... */
-  const osThreadAttr_t imuTask_attributes = {
-    .name = "imuTask",
-    .stack_size = 2048 * 4,
-    .priority = (osPriority_t) osPriorityAboveNormal,
-  };
-
-  const osThreadAttr_t motorTask_attributes = {
-      .name = "motorTask",
-      .stack_size = 2048 * 4,
-      .priority = (osPriority_t) osPriorityHigh,   // ƯU TIÊN CAO
-  };
-
-  osThreadNew(MotorControlTask, NULL, &motorTask_attributes);
-
-  //osThreadNew(ImuTask, NULL, &imuTask_attributes);
-
-  imuTaskHandle = osThreadNew(ImuTask, NULL, &imuTask_attributes);
-  if (imuTaskHandle == NULL)
-  {
-      // ❌ task tạo thất bại
-      HAL_GPIO_WritePin(GPIOD, LD6_Pin, GPIO_PIN_SET);  // sáng đỏ
-  }
-  else
-  {
-      // ✅ task tạo thành công
-      HAL_GPIO_WritePin(GPIOD, LD5_Pin, GPIO_PIN_SET);  // sáng xanh
-  }
-
-
-
   /* USER CODE END RTOS_EVENTS */
 
   /* Start scheduler */
@@ -682,7 +746,7 @@ static void MX_USART6_UART_Init(void)
 
   /* USER CODE END USART6_Init 1 */
   huart6.Instance = USART6;
-  huart6.Init.BaudRate = 115200;
+  huart6.Init.BaudRate = 921600;
   huart6.Init.WordLength = UART_WORDLENGTH_8B;
   huart6.Init.StopBits = UART_STOPBITS_1;
   huart6.Init.Parity = UART_PARITY_NONE;
@@ -798,6 +862,7 @@ void * microros_zero_allocate(size_t number_of_elements, size_t size_of_element,
 //((delta_left/PPR)/Ts)*2*pi: Vận tốc góc rad/s
 //2*pi*wheel_radius: chu vi bánh xe
 void PID_Calculate1(){ // left
+	pid_running = 1;
 	enc_left = __HAL_TIM_GET_COUNTER(&htim1);
 	delta_left = enc_left - pre_enc_left;
 	if(delta_left > 40000){
@@ -805,11 +870,29 @@ void PID_Calculate1(){ // left
 	}else if(delta_left < -40000){
 		delta_left += 65536;
 	}
+	
+	// Lọc nhiễu: Bỏ qua nếu delta quá lớn (encoder glitch)
+	if(fabsf(delta_left) > 5000) {
+		delta_left = 0;  // Giữ nguyên giá trị trước
+	}
+	
 	speed_left= ((delta_left/PPR)/Ts)*(2*pi*wheel_radius);
+	
+	// Deadzone: loại bỏ nhiễu nhỏ khi về 0
+	if(fabsf(speed_left) < 0.08f) {
+		speed_left = 0.0f;
+	}
+	
 	pre_enc_left = enc_left;
-	Error1 = setpoint_left - speed_left;
+	
+	// Đọc setpoint atomically
+	__disable_irq();
+	float sp_left = setpoint_left;
+	__enable_irq();
+	
+	Error1 = sp_left - speed_left;
 
-	if (Error1 == 0) {
+	if (sp_left == 0.0f) {
 			P_part1 = 0;
 			I_part1 = 0;
 			D_part1 = 0;
@@ -841,14 +924,32 @@ void PID_Calculate2(){ //right
 	delta_right = enc_right-pre_enc_right;
 	if(delta_right > 40000){
 		delta_right -= 65536;
-	}else if(delta_right <- 40000){
+	}else if(delta_right < -40000){
 		delta_right += 65536;
 	}
+	
+	// Lọc nhiễu: Bỏ qua nếu delta quá lớn (encoder glitch)
+	if(fabsf(delta_right) > 5000) {
+		delta_right = 0;  // Giữ nguyên giá trị trước
+	}
+	
 	speed_right = ((delta_right/PPR)/Ts)*(2*pi*wheel_radius);
+	
+	// Deadzone: loại bỏ nhiễu nhỏ khi về 0
+	if(fabsf(speed_right) < 0.08f) {
+		speed_right = 0.0f;
+	}
+	
 	pre_enc_right = enc_right;
-	Error2 = setpoint_right - speed_right;
+	
+	// Đọc setpoint atomically
+	__disable_irq();
+	float sp_right = setpoint_right;
+	__enable_irq();
+	
+	Error2 = sp_right - speed_right;
 
-	if (Error2 == 0) {
+	if (sp_right == 0.0f) {
 			P_part2 = 0;
 			I_part2 = 0;
 			D_part2 = 0;
@@ -876,6 +977,7 @@ void PID_Calculate2(){ //right
 }
 
 void PWM_Calculate1(){ //left
+	pwm_running = 1;
 	if(duty_left == 0){
 			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
 			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_RESET);
@@ -935,11 +1037,24 @@ void updateRPY()
     float gy = (g_gyro_angle_y - base_y_gyro) * (M_PI / 180.0f);
     float gz = (g_gyro_angle_z - base_z_gyro) * (M_PI / 180.0f);
 
-    // ==== CHỐNG DRIFT YAW: Thêm deadzone cho gyro Z ====
-    const float GYRO_Z_DEADZONE = 0.01f; // rad/s (~0.57 deg/s)
-    if (fabsf(gz) < GYRO_Z_DEADZONE)
-    {
-        gz = 0.0f; // Bỏ qua gyro noise khi robot đứng yên
+    // ==== Gyro Z Deadzone để chống drift ====
+    #define GYRO_Z_DEADZONE 0.5f  // 0.5 deg/s
+    if (fabsf(g_gyro_angle_z - base_z_gyro) < GYRO_Z_DEADZONE) {
+        gz = 0.0f;
+    }
+
+    // ==== Stationary detection - ngừng tích phân yaw khi robot đứng yên ====
+    static int stationary_count = 0;
+    #define STATIONARY_THRESHOLD 0.01f  // m/s
+    #define STATIONARY_SAMPLES 50       // 0.5 giây @ 100Hz
+    
+    if (fabsf(speed_left) < STATIONARY_THRESHOLD && fabsf(speed_right) < STATIONARY_THRESHOLD) {
+        stationary_count++;
+        if (stationary_count > STATIONARY_SAMPLES) {
+            gz = 0.0f;  // Dừng tích phân yaw khi robot đứng yên
+        }
+    } else {
+        stationary_count = 0;
     }
 
     // Tích phân gyro để ra góc (rad)
@@ -962,19 +1077,6 @@ void updateRPY()
     roll  = angle_x;
     pitch = angle_y;
     yaw   = angle_z;
-
-    // ==== 5. Tính quaternion từ roll (x), pitch (y), yaw (z) ====
-    float cy = cosf(angle_z * 0.5f);
-    float sy = sinf(angle_z * 0.5f);
-    float cp = cosf(angle_y * 0.5f);
-    float sp = sinf(angle_y * 0.5f);
-    float cr = cosf(angle_x * 0.5f);
-    float sr = sinf(angle_x * 0.5f);
-
-    imu_msg.orientation.w = cr * cp * cy + sr * sp * sy;
-    imu_msg.orientation.x = sr * cp * cy - cr * sp * sy;
-    imu_msg.orientation.y = cr * sp * cy + sr * cp * sy;
-    imu_msg.orientation.z = cr * cp * sy - sr * sp * cy;
 
     // Lưu lại góc cho lần gọi sau
     set_last_read_angle_data(t_now,
@@ -1027,27 +1129,20 @@ void StartDefaultTask(void *argument)
 	  // create node
 	  rclc_node_init_default(&node, "stm32_node", "", &support);
 
-	  // ---------- Publishers ----------
+	  // ---------- Publisher - gộp tất cả sensor data vào 1 topic ----------
 	      rclc_publisher_init_default(
-	          &imu_pub,
-	          &node,
-	          ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
-	          "imu");
-
-	      rclc_publisher_init_default(
-	          &motor_feedback_pub,
+	          &sensor_data_pub,
 	          &node,
 	          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
-	          "motor_feedback");
+	          "sensor_data");
 
-	  // ---------- Subscriber ----------
-	      rclc_subscription_init_default(
-	          &cmd_vel_sub,
-	          &node,
-	          ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, TwistStamped),
-	          "/diff_cont/cmd_vel");
-
-
+  // ---------- Subscriber ----------
+	  rclc_subscription_init_default(
+		  &cmd_vel_sub,
+		  &node,
+		  ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, TwistStamped),
+		  "/diff_cont/cmd_vel");
+		  
 	  // ---------- Executor ----------
 		  rclc_executor_init(&executor, &support.context, 1, &allocator);
 		  rclc_executor_add_subscription(&executor, &cmd_vel_sub, &cmd_vel_msg, &cmd_vel_callback, ON_NEW_DATA);
@@ -1055,56 +1150,157 @@ void StartDefaultTask(void *argument)
 
 	  // ---------- Main loop ----------
 
-		  // ---------- Init message structures ----------
-		  sensor_msgs__msg__Imu__init(&imu_msg);
-		  std_msgs__msg__Float32MultiArray__init(&motor_feedback_msg);
+		  // ---------- Init message structure ----------
+		  std_msgs__msg__Float32MultiArray__init(&sensor_data_msg);
 
-		  // Layout cho motor_feedback
-		  motor_feedback_msg.layout.dim.data = NULL;
-		  motor_feedback_msg.layout.dim.size = 0;
-		  motor_feedback_msg.layout.dim.capacity = 0;
-		  motor_feedback_msg.layout.data_offset = 0;
+		  // Gán data pointer một lần - buffer chứa [gyro_x, gyro_y, gyro_z, acc_x, acc_y, acc_z, speed_left, speed_right]
+		  sensor_data_msg.data.data = sensor_data_buf;
+		  sensor_data_msg.data.size = 8;
+		  sensor_data_msg.data.capacity = 8;
 
-		  // Gán frame_id (chỉ làm 1 lần)
-		  rosidl_runtime_c__String__assign(&imu_msg.header.frame_id, "imu_link");
-
-		  // Tùy chọn: ping agent để đảm bảo micro-ROS kết nối trước khi publish
-		  (void)rmw_uros_ping_agent(1000, 5);
+		  uint32_t loop_count = 0;
+		  const float deg2rad = 0.0174532925f; // M_PI / 180.0f
 
 		  while (1)
 		  {
-			  // Publish IMU
-			  imu_msg.header.stamp.sec = HAL_GetTick() / 1000;
-			  imu_msg.header.stamp.nanosec = (HAL_GetTick() % 1000) * 1000000;
+			  // Đọc dữ liệu IMU với mutex ngắn nhất có thể
 			  osMutexAcquire(i2c_mutex, osWaitForever);
-
-			  imu_msg.angular_velocity.x = g_gyro_angle_x * M_PI / 180.0f;
-			  imu_msg.angular_velocity.y = g_gyro_angle_y * M_PI / 180.0f;
-			  imu_msg.angular_velocity.z = g_gyro_angle_z * M_PI / 180.0f;
-
-			  imu_msg.linear_acceleration.x = g_accel_angle_x;
-			  imu_msg.linear_acceleration.y = g_accel_angle_y;
-			  imu_msg.linear_acceleration.z = g_accel_angle_z;
-
-			  (void)rcl_publish(&imu_pub, &imu_msg, NULL);
+			  float gyro_x = g_gyro_angle_x;
+			  float gyro_y = g_gyro_angle_y;
+			  float gyro_z = g_gyro_angle_z;
+			  float accel_x = g_accel_angle_x;
+			  float accel_y = g_accel_angle_y;
+			  float accel_z = g_accel_angle_z;
 			  osMutexRelease(i2c_mutex);
 
-			  // Publish motor feedback
-			  motor_fb_buf[0] = -speed_left;
-			  motor_fb_buf[1] = -speed_right;
+			  // Đọc motor speed atomically
+			  __disable_irq();
+			  float s_right = -speed_right;
+			  float s_left = -speed_left;
+			  __enable_irq();
 
-			  motor_feedback_msg.data.data = motor_fb_buf;
-			  motor_feedback_msg.data.size = 2;
-			  motor_feedback_msg.data.capacity = 2;
+			  // Đóng gói tất cả data vào 1 array - [gyro_x, gyro_y, gyro_z, acc_x, acc_y, acc_z, speed_left, speed_right]
+			  sensor_data_buf[0] = gyro_x * deg2rad;  // rad/s
+			  sensor_data_buf[1] = gyro_y * deg2rad;
+			  sensor_data_buf[2] = gyro_z * deg2rad;
+			  sensor_data_buf[3] = accel_x;  // m/s²
+			  sensor_data_buf[4] = accel_y;
+			  sensor_data_buf[5] = accel_z;
+			  sensor_data_buf[6] = s_left;   // m/s
+			  sensor_data_buf[7] = s_right;
 
-			  (void)rcl_publish(&motor_feedback_pub, &motor_feedback_msg, NULL);
+			  // Publish 1 topic duy nhất
+			  (void)rcl_publish(&sensor_data_pub, &sensor_data_msg, NULL);
 
-			  // Spin executor để nhận cmd_vel
-			  rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
+			  // Check cmd_vel mỗi 2 lần publish (~40-50Hz cmd_vel response)
+			  if (++loop_count >= 2) {
+				  rclc_executor_spin_some(&executor, RCL_MS_TO_NS(0));
+				  loop_count = 0;
+			  }
 
-			  osDelay(20); // ~50Hz
+			  osDelay(5); // ~200Hz target -> ~80-100Hz actual
 		  }
   /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_StartTask02 */
+/**
+* @brief Function implementing the imuTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartTask02 */
+void StartTask02(void *argument)
+{
+  /* USER CODE BEGIN StartTask02 */
+  // Đợi calibration hoàn thành trước khi xử lý
+  while (!calibration_done) {
+      osDelay(10);
+  }
+
+  // Khởi tạo mốc thời gian ban đầu
+  t_last = osKernelGetTickCount();
+
+  for (;;)
+  {
+      // Đọc IMU (đã convert sang m/s2 và deg/s trong MPU6050.c)
+      osMutexAcquire(i2c_mutex, osWaitForever);
+      MPU6050_ProcessData(&MPU6050);
+
+      // Debug: increment counter và lưu raw gyro Z
+      imu_read_counter++;
+      last_gyro_z_raw = MPU6050.gyro_z_raw;
+
+      // Lưu gia tốc (m/s^2) vào biến global
+      g_accel_angle_x = MPU6050.acc_x;
+      g_accel_angle_y = MPU6050.acc_y;
+      g_accel_angle_z = MPU6050.acc_z;
+
+      // Lưu vận tốc góc (deg/s) vào biến global
+      g_gyro_angle_x  = MPU6050.gyro_x;
+      g_gyro_angle_y  = MPU6050.gyro_y;
+      g_gyro_angle_z  = MPU6050.gyro_z;
+      osMutexRelease(i2c_mutex);
+
+      // Không cần tính toán phức tạp - để IPC xử lý
+      // updateRPY(); // Bỏ để giảm overhead
+
+      osDelay(10); // ~100 Hz
+  }
+  /* USER CODE END StartTask02 */
+}
+
+/* USER CODE BEGIN Header_StartTask03 */
+/**
+* @brief Function implementing the imuCalibTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartTask03 */
+void StartTask03(void *argument)
+{
+  /* USER CODE BEGIN StartTask03 */
+  // Calibrate IMU - không dùng LED để tránh conflict với MotorControlTask
+  MPU6050_Calibrate(&MPU6050, &base_x_gyro, &base_y_gyro, &base_z_gyro);
+  calibration_done = 1;
+  osThreadExit();  // kết thúc task sau khi calibrate xong
+  /* USER CODE END StartTask03 */
+}
+
+/* USER CODE BEGIN Header_StartTask04 */
+/**
+* @brief Function implementing the motorTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartTask04 */
+void StartTask04(void *argument)
+{
+  /* USER CODE BEGIN StartTask04 */
+  // Sáng LD6 tạm thời để báo task đã khởi động
+  HAL_GPIO_WritePin(GPIOD, LD6_Pin, GPIO_PIN_SET);
+  osDelay(500);
+  HAL_GPIO_WritePin(GPIOD, LD6_Pin, GPIO_PIN_RESET);
+  
+  // Reset debug flags
+  pid_running = 0;
+  pwm_running = 0;
+
+  for(;;)
+  {
+      // BƯỚC 1: Tính cả 2 PID trước (đồng bộ tính toán)
+      PID_Calculate2();  // Right
+      PID_Calculate1();  // Left
+
+      // BƯỚC 2: Disable interrupts để xuất PWM đồng thời
+      __disable_irq();
+      PWM_Calculate2();  // Right
+      PWM_Calculate1();  // Left
+      __enable_irq();
+
+      osDelay(10);	// 100Hz = 10ms
+  }
+  /* USER CODE END StartTask04 */
 }
 
 /**

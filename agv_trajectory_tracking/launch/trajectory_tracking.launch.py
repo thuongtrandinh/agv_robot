@@ -80,6 +80,18 @@ def generate_launch_description():
         description='Lead-in point distance before trajectory start (m) - Robot reaches this first'
     )
     
+    auto_start_arg = DeclareLaunchArgument(
+        'auto_start',
+        default_value='false',
+        description='Auto-start trajectory without waiting for lead-in point (for testing)'
+    )
+    
+    auto_approach_arg = DeclareLaunchArgument(
+        'auto_approach',
+        default_value='true',
+        description='Automatically navigate to lead-in point before starting trajectory'
+    )
+    
     # Get launch configurations
     trajectory_type = LaunchConfiguration('trajectory_type')
     center_x = LaunchConfiguration('center_x')
@@ -91,6 +103,8 @@ def generate_launch_description():
     enable_traj_publish = LaunchConfiguration('enable_traj_publish')
     verbose_logging = LaunchConfiguration('verbose_logging')
     lead_in_distance = LaunchConfiguration('lead_in_distance')
+    auto_start = LaunchConfiguration('auto_start')
+    auto_approach = LaunchConfiguration('auto_approach')
     
     # Node 1: Trajectory Publisher
     trajectory_publisher_node = Node(
@@ -109,6 +123,7 @@ def generate_launch_description():
             'enable_publish': enable_traj_publish,  # Control trajectory publishing
             'trajectory_speed': trajectory_speed,  # Configurable trajectory speed
             'lead_in_distance': lead_in_distance,  # Lead-in point distance
+            'auto_start': auto_start,  # Skip lead-in waiting if true
         }],
     )
     
@@ -126,6 +141,7 @@ def generate_launch_description():
             'goal_tolerance': 0.10,  # Reduced from 0.15 for tighter tracking
             'enable_path_publish': True,  # Always enable path publishing to controller
             'verbose_logging': verbose_logging,  # Control detailed velocity logging
+            'auto_approach': auto_approach,  # Auto-navigate to lead-in point
         }],
     )
     
@@ -154,6 +170,8 @@ def generate_launch_description():
         enable_traj_publish_arg,
         verbose_logging_arg,
         lead_in_distance_arg,  # New: lead-in point distance
+        auto_start_arg,  # New: auto-start without waiting
+        auto_approach_arg,  # New: auto-navigate to lead-in point
         
         # Nodes
         trajectory_publisher_node,

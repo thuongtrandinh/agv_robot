@@ -32,8 +32,8 @@ add_executable(twist_relay src/twist_relay.cpp)
 ament_target_dependencies(twist_relay rclcpp geometry_msgs)
 
 
-add_executable(motor_odom src/motor_odom.cpp)
-ament_target_dependencies(motor_odom
+add_executable(stm32_odom src/stm32_odom.cpp)
+ament_target_dependencies(stm32_odom
   rclcpp
   std_msgs
   sensor_msgs
@@ -56,7 +56,7 @@ install(DIRECTORY urdf launch xacro config include rviz worlds photos models
 )
 
 # Install executables
-install(TARGETS simple_controller motor_odom
+install(TARGETS simple_controller stm32_odom twist_relay
   DESTINATION lib/${PROJECT_NAME})
 
 # Install Python scripts
