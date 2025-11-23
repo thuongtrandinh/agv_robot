@@ -14,7 +14,7 @@ public:
   MotorOdomNode() : Node("stm32_odom") {
     // Parameters (tune as needed)
     this->declare_parameter<double>("wheel_radius", 0.05);
-    this->declare_parameter<double>("wheel_separation", 0.46);
+    this->declare_parameter<double>("wheel_separation", 0.42);
     // Throttle STM32 high-frequency data (>100Hz) to reasonable rate
     this->declare_parameter<double>("odom_publish_rate", 50.0);
     // Topics and frames
@@ -54,8 +54,8 @@ public:
     resetOdometry();
 
     RCLCPP_INFO(this->get_logger(),
-                "motor_odom started @ %.1f Hz. sensor_data_topic: %s (format: [gyro_x,y,z, acc_x,y,z, speed_L, speed_R])",
-                pub_rate, sensor_topic.c_str());
+                "stm32_odom started. sensor_data_topic: %s (format: [gyro_x,y,z, acc_x,y,z, speed_L, speed_R]). Publishing at sensor rate (~57Hz)",
+                sensor_topic.c_str());
   }
 
 private:
@@ -183,20 +183,10 @@ private:
     imu_msg.linear_acceleration_covariance[4] = 0.1;  // acc_y
     imu_msg.linear_acceleration_covariance[8] = 0.1;  // acc_z
 
-    // Throttle publishing to prevent overload (STM32 sends >100Hz, we publish at target rate)
-    // Use nanoseconds for precise timing to avoid accumulation errors
-    auto time_since_last_pub = now - last_pub_time_;
-    if (time_since_last_pub.nanoseconds() >= odom_publish_period_.nanoseconds()) {
-      odom_pub_->publish(odom);
-      imu_pub_->publish(imu_msg);
-      // Update to next target time instead of "now" to maintain consistent rate
-      last_pub_time_ = last_pub_time_ + odom_publish_period_;
-      
-      // Safety: if we're falling behind, reset to current time
-      if ((now - last_pub_time_).nanoseconds() > odom_publish_period_.nanoseconds()) {
-        last_pub_time_ = now;
-      }
-    }
+    // Publish at sensor_data rate (~57Hz from STM32)
+    // No throttle needed since source is already rate-limited
+    odom_pub_->publish(odom);
+    imu_pub_->publish(imu_msg);
 
     // Update last integration time (always update for accurate dt calculation)
     last_time_ = now;
