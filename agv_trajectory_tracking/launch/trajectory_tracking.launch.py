@@ -117,7 +117,7 @@ def generate_launch_description():
             'center_x': center_x,
             'center_y': center_y,
             'radius': radius,
-            'publish_rate': 10.0,  # Conservative 10Hz for reliable real-time sync
+            'publish_rate': 20.0,  # 20Hz for smooth trajectory updates
             'path_points': 200,
             'preview_time': 10.0,
             'enable_publish': enable_traj_publish,  # Control trajectory publishing
@@ -137,7 +137,7 @@ def generate_launch_description():
             'wheel_base': 0.46,
             'max_linear_vel': max_linear_vel,
             'max_angular_vel': max_angular_vel,
-            'control_frequency': 10.0,  # Conservative 10Hz for reliable real-time sync
+            'control_frequency': 20.0,  # 20Hz - match STM32 cmd_vel consumption
             'goal_tolerance': 0.10,  # Reduced from 0.15 for tighter tracking
             'enable_path_publish': True,  # Always enable path publishing to controller
             'verbose_logging': verbose_logging,  # Control detailed velocity logging
@@ -153,8 +153,8 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'max_history': 2000,
-            'update_interval': 100,  # ms - 10Hz update for reliable sync
-            'publish_rate': 10.0,  # Conservative 10Hz for reliable real-time sync
+            'update_interval': 50,  # ms - 20Hz update for smooth visualization
+            'publish_rate': 20.0,  # 20Hz for smooth real-time tracking visualization
         }],
     )
     

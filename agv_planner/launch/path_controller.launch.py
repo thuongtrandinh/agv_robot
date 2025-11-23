@@ -63,7 +63,7 @@ def generate_launch_description():
                     {'max_accel': 0.4},
                     {'max_decel': 1.0},
                     {'max_angular_accel': 1.2},
-                    {'control_rate': 10.0},  # 10Hz - đồng bộ với yêu cầu
+                    {'control_rate': 20.0},  # 20Hz - match STM32 cmd_vel consumption rate
                     # Robot geometry
                     {'robot_radius': 0.23},  # width 46cm/2
                     # Hardware delay compensation
@@ -81,8 +81,8 @@ def generate_launch_description():
                     # Evasion parameters - giảm độ nhạy
                     {'evasion.clearance': 0.4},
                     {'evasion.lookahead': 0.8},
-                    # Reduce sensor processing frequency
-                    {'scan_throttle': 10.0}  # Process scan at 10Hz max
+                    # Scan processing frequency (matches LIDAR actual rate)
+                    {'scan_throttle': 10.0}  # Process scan at 10Hz (actual LIDAR rate)
                 ],
                 remappings=[
                     # No remapping needed - subscribe to both /amcl_pose and /odometry/filtered directly

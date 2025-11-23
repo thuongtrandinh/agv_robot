@@ -87,8 +87,8 @@ private:
     double acc_z = msg->data[5];
 
     // Extract motor speeds (m/s linear velocity)
-    double v_left = msg->data[6];
-    double v_right = msg->data[7];
+    double v_right = msg->data[6];
+    double v_left = msg->data[7];
 
     // Compute dt for integration
     double dt = (now - last_time_).seconds();
@@ -104,8 +104,8 @@ private:
     double vtheta_encoder = -((v_right - v_left) / wheel_separation_);
 
     // Use IMU gyro_z for more accurate angular velocity (rad/s already)
-    // Low-pass filter to smooth gyro noise: alpha=0.7 (trust gyro 70%, encoder 30%)
-    const double alpha = 0.7;
+    // Low-pass filter to smooth gyro noise: alpha=0.3 (trust gyro 30%, encoder 70%)
+    const double alpha = 0.3;
     double vtheta_fused = alpha * gyro_z + (1.0 - alpha) * vtheta_encoder;
 
     // Integrate pose using fused angular velocity
