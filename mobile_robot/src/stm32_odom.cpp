@@ -28,7 +28,7 @@ public:
     wheel_separation_ = this->get_parameter("wheel_separation").as_double();
 
     double pub_rate = this->get_parameter("odom_publish_rate").as_double();
-    if (pub_rate <= 0.0) pub_rate = 60.0;  // Default 60Hz - throttle STM32 variable rate (57-100Hz)
+    if (pub_rate <= 0.0) pub_rate = 60.0;  // Default 50Hz - throttle STM32 variable rate (57-100Hz)
     odom_publish_period_ = rclcpp::Duration::from_seconds(1.0 / pub_rate);
     // Initialize to allow immediate first publish
     last_pub_time_ = this->now() - odom_publish_period_ - rclcpp::Duration::from_seconds(1.0);
@@ -183,7 +183,7 @@ private:
     imu_msg.linear_acceleration_covariance[4] = 0.1;  // acc_y
     imu_msg.linear_acceleration_covariance[8] = 0.1;  // acc_z
 
-    // Throttle output to fixed rate (60Hz) regardless of STM32 input rate (57-111Hz variable)
+    // Throttle output to fixed rate (50Hz) regardless of STM32 input rate (57-111Hz variable)
     rclcpp::Duration since_last_pub = now - last_pub_time_;
     if (since_last_pub >= odom_publish_period_) {
       odom_pub_->publish(odom);

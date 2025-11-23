@@ -38,23 +38,23 @@ def generate_launch_description():
         "ekf.yaml"
     )
     
-    # IMU Republisher (reduced covariance for stability)
-    imu_republisher = Node(
-        package="agv_localization",
-        executable="imu_republisher",
-        name="imu_republisher",
-        output="screen",
-        parameters=[
-            {"use_sim_time": use_sim_time},
-            {"input_topic": "/imu"},
-            {"output_topic": "/imu_with_covariance"},
-            {"orientation_covariance": 0.08},
-            {"angular_velocity_covariance": 0.12},
-            {"linear_acceleration_covariance": 0.20}
-        ]
-    )
+    # IMU Republisher - DISABLED (IMU hardware removed)
+    # imu_republisher = Node(
+    #     package="agv_localization",
+    #     executable="imu_republisher",
+    #     name="imu_republisher",
+    #     output="screen",
+    #     parameters=[
+    #         {"use_sim_time": use_sim_time},
+    #         {"input_topic": "/imu"},
+    #         {"output_topic": "/imu_with_covariance"},
+    #         {"orientation_covariance": 0.01},
+    #         {"angular_velocity_covariance": 0.02},
+    #         {"linear_acceleration_covariance": 0.1}
+    #     ]
+    # )
     
-    # Odometry Republisher (reduced covariance for stability)
+    # Odometry Republisher (balanced covariance - trust encoders but allow noise filtering)
     odom_republisher = Node(
         package="agv_localization",
         executable="odom_republisher",
@@ -64,16 +64,16 @@ def generate_launch_description():
             {"use_sim_time": use_sim_time},
             {"input_topic": "/diff_cont/odom"},
             {"output_topic": "/diff_cont/odom_with_covariance"},
-            {"pose_x_covariance": 0.03},
-            {"pose_y_covariance": 0.03},
-            {"pose_yaw_covariance": 0.08},
-            {"twist_vx_covariance": 0.03},
-            {"twist_vy_covariance": 0.03},
-            {"twist_vyaw_covariance": 0.08}
+            {"pose_x_covariance": 0.01},  # Trust encoders but allow EKF to filter
+            {"pose_y_covariance": 0.01},
+            {"pose_yaw_covariance": 0.02},  # Moderate - fused encoder+gyro needs filtering
+            {"twist_vx_covariance": 0.01},  # Trust velocity but filter noise
+            {"twist_vy_covariance": 0.01},
+            {"twist_vyaw_covariance": 0.02}  # Let EKF smooth angular velocity noise
         ]
     )
     
-    # EKF Node (high frequency to match stm32_odom rate)
+    # EKF Node (match throttled stm32_odom output)
     ekf_filter = Node(
         package="robot_localization",
         executable="ekf_node",
@@ -82,7 +82,7 @@ def generate_launch_description():
         parameters=[
             ekf_config_file,
             {"use_sim_time": use_sim_time},
-            {"frequency": 50.0}  # Match stm32_odom rate (~57Hz)
+            {"frequency": 50.0}  # Match stm32_odom throttled output (50Hz)
         ]
     )
     
@@ -155,7 +155,7 @@ def generate_launch_description():
     return LaunchDescription([
         use_sim_time_arg,
         slam_config_arg,
-        imu_republisher,
+        # imu_republisher,  # Disabled - IMU hardware removed
         odom_republisher,
         ekf_filter,
         nav2_map_saver,

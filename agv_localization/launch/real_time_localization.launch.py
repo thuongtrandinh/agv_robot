@@ -43,7 +43,7 @@ def launch_setup(context, *args, **kwargs):
         parameters=[
             ekf_config_file,
             {"use_sim_time": use_sim_time},
-            {"frequency": 50.0}  # Match stm32_odom rate (~57Hz)
+            {"frequency": 50.0}  # Match stm32_odom throttled output (50Hz)
         ],
     )
     
@@ -60,7 +60,7 @@ def launch_setup(context, *args, **kwargs):
 
     # Delay AMCL activation to ensure transforms are available
     amcl_delayed = TimerAction(
-        period=3.0,  # Reduced to 3s - high-frequency odometry stabilizes faster
+        period=5.0,  # 5s to ensure LiDAR TF is stable
         actions=[
             Node(
                 package="nav2_amcl",
@@ -73,6 +73,28 @@ def launch_setup(context, *args, **kwargs):
                 ],
                 remappings=[("/scan", "/scan")]  # Use throttled scan
             )
+        ]
+    )
+
+    # ArUco Localizer - Uses saved marker positions to correct robot pose
+    aruco_localizer = Node(
+        package="agv_zed2",
+        executable="aruco_localizer",
+        name="aruco_localizer_node",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"map_frame": "map"},
+            {"camera_frame_id": "zed2_left_camera_frame"},
+            {"marker_topic": "aruco/markers"},
+            {"marker_map_file": "aruco_map_positions.yaml"},
+            {"position_variance": 0.0001},
+            {"orientation_variance": 0.001},
+            {"distance_scaling": 0.00005}
+        ],
+        # Remap ArUco pose to AMCL's initialpose topic for automatic correction
+        remappings=[
+            ("/aruco/pose_with_covariance", "/initialpose")
         ]
     )
 
@@ -94,6 +116,7 @@ def launch_setup(context, *args, **kwargs):
         ekf_node,
         nav2_map_server,
         amcl_delayed,
+        aruco_localizer,  # ArUco localization for drift correction
         lifecycle
     ]
 

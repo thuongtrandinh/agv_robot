@@ -23,7 +23,7 @@ amcl:
 
     # Transform & timing - Force continuous updates
     tf_broadcast: true
-    transform_tolerance: 0.2  # Tight sync to prevent visual lag
+    transform_tolerance: 0.5  # Increased tolerance for hardware timing jitter
     update_min_a: 0.01  # Update after 0.01 rad (~0.5°) - very frequent
     update_min_d: 0.01  # Update after 1cm translation - very frequent
 
