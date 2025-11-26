@@ -100,8 +100,8 @@ private:
     // ========== ODOMETRY CALCULATION ==========
     // Compute robot velocities from wheel speeds
     double vx = (v_right + v_left) / 2.0;
-    // FIXED: Negate to match encoder direction (left turn = positive angular velocity)
-    double vtheta_encoder = -((v_right - v_left) / wheel_separation_);
+      // FIXED: Đảo lại chiều encoder cho đúng thực tế (left turn = positive angular velocity)
+      double vtheta_encoder = ((v_right - v_left) / wheel_separation_);
 
     // Use IMU gyro_z for more accurate angular velocity (rad/s already)
     // Low-pass filter to smooth gyro noise: alpha=0.3 (trust gyro 30%, encoder 70%)
