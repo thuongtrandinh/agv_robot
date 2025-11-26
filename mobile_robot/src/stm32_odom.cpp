@@ -116,6 +116,11 @@ private:
     x_ += dx * std::cos(yaw_);
     y_ += dx * std::sin(yaw_);
 
+    // Debug log (remove after testing)
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                         "gyro_z=%.4f, vtheta_enc=%.4f, vtheta_fused=%.4f, yaw=%.4f",
+                         gyro_z, vtheta_encoder, vtheta_fused, yaw_);
+
     // Normalize yaw to [-pi, pi]
     while (yaw_ > M_PI) yaw_ -= 2.0 * M_PI;
     while (yaw_ < -M_PI) yaw_ += 2.0 * M_PI;
