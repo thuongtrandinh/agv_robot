@@ -105,7 +105,7 @@ private:
 
     // Use IMU gyro_z for more accurate angular velocity (rad/s already)
     // Low-pass filter to smooth gyro noise: alpha=0.3 (trust gyro 30%, encoder 70%)
-    const double alpha = 0.3;
+    const double alpha = 0;
     double vtheta_fused = alpha * gyro_z + (1.0 - alpha) * vtheta_encoder;
 
     // Integrate pose using fused angular velocity
