@@ -46,8 +46,8 @@ def generate_launch_description():
     
     max_linear_vel_arg = DeclareLaunchArgument(
         'max_linear_vel',
-        default_value='0.45',  # OPTIMIZED for stable tracking of all trajectories
-        description='Maximum robot linear velocity (m/s) - Optimal: 0.45'
+        default_value='0.4',  # Reduced for safer and smoother tracking
+        description='Maximum robot linear velocity (m/s) - Optimal: 0.4'
     )
     
     max_angular_vel_arg = DeclareLaunchArgument(
@@ -58,8 +58,8 @@ def generate_launch_description():
     
     trajectory_speed_arg = DeclareLaunchArgument(
         'trajectory_speed',
-        default_value='0.35',  # m/s - OPTIMIZED for Circle, Square, Figure-8
-        description='Trajectory reference speed (m/s) - Optimal: 0.35'
+        default_value='0.3',  # m/s - Reduced for smoother tracking
+        description='Trajectory reference speed (m/s) - Optimal: 0.3'
     )
     
     enable_traj_publish_arg = DeclareLaunchArgument(
@@ -82,6 +82,7 @@ def generate_launch_description():
     max_linear_vel = LaunchConfiguration('max_linear_vel')
     max_angular_vel = LaunchConfiguration('max_angular_vel')
     trajectory_speed = LaunchConfiguration('trajectory_speed')
+    ramp_time = LaunchConfiguration('ramp_time')
     enable_traj_publish = LaunchConfiguration('enable_traj_publish')
     verbose_logging = LaunchConfiguration('verbose_logging')
     
@@ -101,6 +102,7 @@ def generate_launch_description():
             'preview_time': 10.0,
             'enable_publish': enable_traj_publish,  # Control trajectory publishing
             'trajectory_speed': trajectory_speed,  # Configurable trajectory speed
+            'ramp_time': ramp_time,  # Smooth speed ramping time
         }],
     )
     
@@ -143,6 +145,7 @@ def generate_launch_description():
         max_linear_vel_arg,
         max_angular_vel_arg,
         trajectory_speed_arg,  # New: control trajectory speed
+        ramp_time_arg,  # New: smooth speed ramping
         enable_traj_publish_arg,
         verbose_logging_arg,
         

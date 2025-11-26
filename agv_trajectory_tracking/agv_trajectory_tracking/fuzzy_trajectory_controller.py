@@ -89,8 +89,8 @@ class FuzzyTrajectoryController(Node):
         self.enable_path_publish = self.get_parameter('enable_path_publish').value
         self.verbose_logging = self.get_parameter('verbose_logging').value
         
-        # 🔧 CRITICAL: Maximum wheel velocity constraint (1.0 m/s per wheel)
-        self.max_wheel_vel = 1.0  # m/s - hardware limit for each motor
+        # 🔧 CRITICAL: Maximum wheel velocity constraint (0.4 m/s per wheel)
+        self.max_wheel_vel = 0.4  # m/s - hardware limit for each motor (REDUCED for safety)
         
         # Robot state
         self.robot_x = 0.0

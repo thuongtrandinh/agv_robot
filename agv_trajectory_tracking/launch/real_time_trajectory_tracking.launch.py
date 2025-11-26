@@ -46,20 +46,26 @@ def generate_launch_description():
     
     max_linear_vel_arg = DeclareLaunchArgument(
         'max_linear_vel',
-        default_value='0.45',  # OPTIMIZED for stable tracking of all trajectories
-        description='Maximum robot linear velocity (m/s) - Optimal: 0.45'
+        default_value='0.35',  # Safe limit to ensure wheel velocity ≤ 0.4 m/s
+        description='Maximum robot linear velocity (m/s) - Safe: 0.35'
     )
     
     max_angular_vel_arg = DeclareLaunchArgument(
         'max_angular_vel',
-        default_value='1.5',  # Increased from 1.0 for sharper turns
+        default_value='0.8',  # Reduced to keep wheel velocities safe
         description='Maximum angular velocity (rad/s)'
     )
     
     trajectory_speed_arg = DeclareLaunchArgument(
         'trajectory_speed',
-        default_value='0.35',  # m/s - OPTIMIZED for Circle, Square, Figure-8
-        description='Trajectory reference speed (m/s) - Optimal: 0.35'
+        default_value='0.25',  # m/s - Smooth and safe speed with ramping
+        description='Trajectory reference speed (m/s) - Optimal: 0.25'
+    )
+    
+    ramp_time_arg = DeclareLaunchArgument(
+        'ramp_time',
+        default_value='3.0',  # seconds - Smooth acceleration time
+        description='Time to smoothly ramp up/down speed (s) to avoid sudden velocity changes'
     )
     
     enable_traj_publish_arg = DeclareLaunchArgument(
@@ -82,6 +88,7 @@ def generate_launch_description():
     max_linear_vel = LaunchConfiguration('max_linear_vel')
     max_angular_vel = LaunchConfiguration('max_angular_vel')
     trajectory_speed = LaunchConfiguration('trajectory_speed')
+    ramp_time = LaunchConfiguration('ramp_time')
     enable_traj_publish = LaunchConfiguration('enable_traj_publish')
     verbose_logging = LaunchConfiguration('verbose_logging')
     
@@ -96,11 +103,12 @@ def generate_launch_description():
             'center_x': center_x,
             'center_y': center_y,
             'radius': radius,
-            'publish_rate': 20.0,  # FIXED at 20Hz for optimal real-time tracking
+            'publish_rate': 20.0,  # FIXED at 20Hz for optimal real-time tracking (matches controller)
             'path_points': 200,
             'preview_time': 10.0,
             'enable_publish': enable_traj_publish,  # Control trajectory publishing
             'trajectory_speed': trajectory_speed,  # Configurable trajectory speed
+            'ramp_time': ramp_time,  # Smooth speed ramping time
         }],
     )
     
@@ -143,6 +151,7 @@ def generate_launch_description():
         max_linear_vel_arg,
         max_angular_vel_arg,
         trajectory_speed_arg,  # New: control trajectory speed
+        ramp_time_arg,  # New: smooth speed ramping
         enable_traj_publish_arg,
         verbose_logging_arg,
         

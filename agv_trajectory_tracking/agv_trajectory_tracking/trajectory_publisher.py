@@ -33,7 +33,8 @@ class TrajectoryPublisher(Node):
         self.declare_parameter('center_y', -2.0)      # Trajectory center Y coordinate
         self.declare_parameter('radius', 5.0)         # Circle radius (m)
         self.declare_parameter('enable_publish', True)  # Enable/disable trajectory publishing
-        self.declare_parameter('trajectory_speed', 0.35)  # Trajectory reference speed (m/s) - OPTIMIZED for all
+        self.declare_parameter('trajectory_speed', 0.3)  # Trajectory reference speed (m/s) - Reduced for smoother motion
+        self.declare_parameter('ramp_time', 3.0)  # Time to ramp up/down speed (s) for smooth start/stop
         
         self.trajectory_type = self.get_parameter('trajectory_type').value
         self.publish_rate = self.get_parameter('publish_rate').value
@@ -44,6 +45,7 @@ class TrajectoryPublisher(Node):
         self.radius = self.get_parameter('radius').value
         self.enable_publish = self.get_parameter('enable_publish').value
         self.trajectory_speed = self.get_parameter('trajectory_speed').value
+        self.ramp_time = self.get_parameter('ramp_time').value
         
         # Publisher
         self.path_pub = self.create_publisher(Path, '/trajectory', 10)
@@ -79,7 +81,7 @@ class TrajectoryPublisher(Node):
         
         self.get_logger().info(f'  Publishing at {self.publish_rate} Hz (FIXED for real-time)')
         self.get_logger().info(f'  Path points: {self.path_points}')
-        self.get_logger().info(f'  Trajectory speed: {self.trajectory_speed} m/s')
+        self.get_logger().info(f'  Trajectory speed: {self.trajectory_speed} m/s (with {self.ramp_time}s smooth ramp)')
         self.get_logger().info(f'⏳ Waiting {self.startup_delay}s for robot to be ready...')
     
     def on_startup_complete(self):
@@ -92,6 +94,28 @@ class TrajectoryPublisher(Node):
         """Get human-readable trajectory name"""
         names = {1: 'Circle', 2: 'Square', 3: 'Figure-8 (Lemniscate)'}
         return names.get(self.trajectory_type, 'Unknown')
+    
+    def smooth_speed_ramp(self, t):
+        """
+        Apply smooth speed ramping to avoid sudden velocity changes
+        Uses sigmoid function for smooth acceleration/deceleration
+        
+        Args:
+            t: current time (s)
+        Returns:
+            speed_scale: multiplier (0.0 to 1.0) for trajectory speed
+        """
+        if t < self.ramp_time:
+            # Smooth ramp up using sigmoid-like function
+            # Maps [0, ramp_time] -> [0, 1] smoothly
+            progress = t / self.ramp_time
+            # Use smooth S-curve (cubic easing)
+            speed_scale = progress * progress * (3.0 - 2.0 * progress)
+        else:
+            # Full speed after ramp time
+            speed_scale = 1.0
+        
+        return speed_scale
     
     def trajectory_reference_circle(self, t):
         """
@@ -106,7 +130,9 @@ class TrajectoryPublisher(Node):
         R = self.radius    # Radius [m] - Use configurable radius
         # Angular velocity calculated from desired linear velocity
         # omega = v / R, where v is desired speed
-        v_desired = self.trajectory_speed  # Use configurable trajectory speed
+        # Apply smooth speed ramping to avoid sudden velocity changes
+        speed_scale = self.smooth_speed_ramp(t)
+        v_desired = self.trajectory_speed * speed_scale  # Ramped speed
         omega = v_desired / max(R, 0.1)  # Prevent division by zero
         
         # Use configurable center instead of fixed [0,0]
@@ -131,8 +157,10 @@ class TrajectoryPublisher(Node):
         """
         # Parameters
         side = self.radius * 2.0  # Side length [m] - Based on radius parameter
-        v_desired = self.trajectory_speed  # Use configurable trajectory speed
-        T_side = side / v_desired # Time per side (s)
+        # Apply smooth speed ramping to avoid sudden velocity changes
+        speed_scale = self.smooth_speed_ramp(t)
+        v_desired = self.trajectory_speed * speed_scale  # Ramped speed
+        T_side = side / max(v_desired, 0.01) # Time per side (s) - prevent division by zero
         T_period = 4 * T_side     # Period (time for one complete loop)
         
         # Compute current position on square (relative to center)
@@ -178,9 +206,11 @@ class TrajectoryPublisher(Node):
         # Parameters
         # Each circle in figure-8 has radius = r/2, so amplitude A = r/2
         A = self.radius / 2.0  # Amplitude (half width) - Based on radius parameter
-        v_desired = self.trajectory_speed  # Use configurable trajectory speed
+        # Apply smooth speed ramping to avoid sudden velocity changes
+        speed_scale = self.smooth_speed_ramp(t)
+        v_desired = self.trajectory_speed * speed_scale  # Ramped speed
         # Approximate perimeter for figure-8, omega adjusted for desired speed
-        omega = v_desired / (2.0 * A)  # Adjusted angular velocity
+        omega = v_desired / max(2.0 * A, 0.1)  # Adjusted angular velocity, prevent division by zero
         
         # Compute trajectory (Lemniscate of Gerono parametric equations)
         # Relative to origin
