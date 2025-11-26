@@ -331,7 +331,7 @@
 
 <!--lidar-->
     <joint name="joint_scan" type="fixed">
-        <origin xyz="0 0.0 ${body_height +0.25+ 0.009}" rpy="0.0 0.0 0.0"/>
+        <origin xyz="0 0.0 ${body_height +0.25+ 0.009}" rpy="0.0 0.0 ${PI}"/>
         <parent link="base_link"/>
         <child link="laser"/>
     </joint>
