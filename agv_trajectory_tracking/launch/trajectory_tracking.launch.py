@@ -46,8 +46,8 @@ def generate_launch_description():
     
     max_linear_vel_arg = DeclareLaunchArgument(
         'max_linear_vel',
-        default_value='0.35',  # Reduced for tighter tracking with hardware delays
-        description='Maximum robot linear velocity (m/s) - Reduced for accuracy'
+        default_value='0.45',  # OPTIMIZED for stable tracking of all trajectories
+        description='Maximum robot linear velocity (m/s) - Optimal: 0.45'
     )
     
     max_angular_vel_arg = DeclareLaunchArgument(
@@ -58,8 +58,8 @@ def generate_launch_description():
     
     trajectory_speed_arg = DeclareLaunchArgument(
         'trajectory_speed',
-        default_value='0.25',  # m/s - Reduced for better tracking accuracy
-        description='Trajectory reference speed (m/s) - Lower for precision'
+        default_value='0.35',  # m/s - OPTIMIZED for Circle, Square, Figure-8
+        description='Trajectory reference speed (m/s) - Optimal: 0.35'
     )
     
     enable_traj_publish_arg = DeclareLaunchArgument(
@@ -74,24 +74,6 @@ def generate_launch_description():
         description='Enable detailed velocity logging (v, omega, vL, vR)'
     )
     
-    lead_in_distance_arg = DeclareLaunchArgument(
-        'lead_in_distance',
-        default_value='0.15',
-        description='Lead-in point distance before trajectory start (m) - Robot reaches this first'
-    )
-    
-    auto_start_arg = DeclareLaunchArgument(
-        'auto_start',
-        default_value='false',
-        description='Auto-start trajectory without waiting for lead-in point (for testing)'
-    )
-    
-    auto_approach_arg = DeclareLaunchArgument(
-        'auto_approach',
-        default_value='true',
-        description='Automatically navigate to lead-in point before starting trajectory'
-    )
-    
     # Get launch configurations
     trajectory_type = LaunchConfiguration('trajectory_type')
     center_x = LaunchConfiguration('center_x')
@@ -102,9 +84,6 @@ def generate_launch_description():
     trajectory_speed = LaunchConfiguration('trajectory_speed')
     enable_traj_publish = LaunchConfiguration('enable_traj_publish')
     verbose_logging = LaunchConfiguration('verbose_logging')
-    lead_in_distance = LaunchConfiguration('lead_in_distance')
-    auto_start = LaunchConfiguration('auto_start')
-    auto_approach = LaunchConfiguration('auto_approach')
     
     # Node 1: Trajectory Publisher
     trajectory_publisher_node = Node(
@@ -117,13 +96,11 @@ def generate_launch_description():
             'center_x': center_x,
             'center_y': center_y,
             'radius': radius,
-            'publish_rate': 20.0,  # 20Hz for smooth trajectory updates
+            'publish_rate': 20.0,  # FIXED at 20Hz for optimal real-time tracking
             'path_points': 200,
             'preview_time': 10.0,
             'enable_publish': enable_traj_publish,  # Control trajectory publishing
             'trajectory_speed': trajectory_speed,  # Configurable trajectory speed
-            'lead_in_distance': lead_in_distance,  # Lead-in point distance
-            'auto_start': auto_start,  # Skip lead-in waiting if true
         }],
     )
     
@@ -137,11 +114,10 @@ def generate_launch_description():
             'wheel_base': 0.46,
             'max_linear_vel': max_linear_vel,
             'max_angular_vel': max_angular_vel,
-            'control_frequency': 20.0,  # 20Hz - match STM32 cmd_vel consumption
+            'control_frequency': 20.0,
             'goal_tolerance': 0.10,  # Reduced from 0.15 for tighter tracking
             'enable_path_publish': True,  # Always enable path publishing to controller
             'verbose_logging': verbose_logging,  # Control detailed velocity logging
-            'auto_approach': auto_approach,  # Auto-navigate to lead-in point
         }],
     )
     
@@ -153,8 +129,8 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'max_history': 2000,
-            'update_interval': 50,  # ms - 20Hz update for smooth visualization
-            'publish_rate': 20.0,  # 20Hz for smooth real-time tracking visualization
+            'update_interval': 25,  # ms - Fast real-time update (40 Hz) for smooth plotting
+            'publish_rate': 20.0,  # Fixed to match trajectory publisher
         }],
     )
     
@@ -169,9 +145,6 @@ def generate_launch_description():
         trajectory_speed_arg,  # New: control trajectory speed
         enable_traj_publish_arg,
         verbose_logging_arg,
-        lead_in_distance_arg,  # New: lead-in point distance
-        auto_start_arg,  # New: auto-start without waiting
-        auto_approach_arg,  # New: auto-navigate to lead-in point
         
         # Nodes
         trajectory_publisher_node,

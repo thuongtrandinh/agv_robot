@@ -14,8 +14,6 @@ import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
-from std_msgs.msg import Bool
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 import math
 import numpy as np
 
@@ -25,13 +23,6 @@ class TrajectoryPublisher(Node):
     
     def __init__(self):
         super().__init__('trajectory_publisher')
-        
-        latched_qos = QoSProfile(
-            reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,  # Latch trajectory
-            history=HistoryPolicy.KEEP_LAST,
-            depth=1
-        )
         
         # Parameters
         self.declare_parameter('trajectory_type', 2)  # 1:Circle, 2:Square, 3:Figure-8
@@ -43,7 +34,6 @@ class TrajectoryPublisher(Node):
         self.declare_parameter('radius', 5.0)         # Circle radius (m)
         self.declare_parameter('enable_publish', True)  # Enable/disable trajectory publishing
         self.declare_parameter('trajectory_speed', 0.35)  # Trajectory reference speed (m/s) - OPTIMIZED for all
-        self.declare_parameter('lead_in_distance', 0.15)  # Distance before trajectory start (m) - lead-in point
         
         self.trajectory_type = self.get_parameter('trajectory_type').value
         self.publish_rate = self.get_parameter('publish_rate').value
@@ -54,16 +44,9 @@ class TrajectoryPublisher(Node):
         self.radius = self.get_parameter('radius').value
         self.enable_publish = self.get_parameter('enable_publish').value
         self.trajectory_speed = self.get_parameter('trajectory_speed').value
-        self.lead_in_distance = self.get_parameter('lead_in_distance').value
         
         # Publisher
-        self.path_pub = self.create_publisher(Path, '/trajectory', latched_qos)
-        
-        # 🚀 NEW: Trajectory control - wait for robot to reach lead-in point
-        self.trajectory_active = False  # Start paused - wait for controller signal
-        self.trajectory_start_sub = self.create_subscription(
-            Bool, '/trajectory_start_signal',
-            self.trajectory_start_callback, 10)
+        self.path_pub = self.create_publisher(Path, '/trajectory', 10)
         
         # Wait for robot to be ready (localization, controller, etc.)
         self.startup_delay = 3.0  # seconds - Wait for robot systems to initialize
@@ -97,21 +80,13 @@ class TrajectoryPublisher(Node):
         self.get_logger().info(f'  Publishing at {self.publish_rate} Hz (FIXED for real-time)')
         self.get_logger().info(f'  Path points: {self.path_points}')
         self.get_logger().info(f'  Trajectory speed: {self.trajectory_speed} m/s')
-        self.get_logger().info(f'  Lead-in distance: {self.lead_in_distance} m')
         self.get_logger().info(f'⏳ Waiting {self.startup_delay}s for robot to be ready...')
     
     def on_startup_complete(self):
         """Called after startup delay - robot is ready"""
         self.is_ready = True
         self.startup_timer.cancel()  # Stop the one-shot timer
-        self.get_logger().info('✅ Robot ready! Publishing static trajectory with lead-in point...')
-        self.get_logger().info('⏸️  Trajectory PAUSED - waiting for robot to reach lead-in point')
-    
-    def trajectory_start_callback(self, msg):
-        """Receive signal from controller to start trajectory movement"""
-        if msg.data and not self.trajectory_active:
-            self.trajectory_active = True
-            self.get_logger().info('▶️  TRAJECTORY STARTED! Robot reached lead-in point - trajectory now moving')
+        self.get_logger().info('✅ Robot ready! Starting trajectory publishing...')
     
     def get_trajectory_name(self):
         """Get human-readable trajectory name"""
@@ -275,37 +250,10 @@ class TrajectoryPublisher(Node):
         return x, y, z, w
     
     def generate_path_message(self):
-        """Generate Path message with trajectory reference points
-        
-        🚀 NEW: First point is LEAD-IN point (static, before trajectory start)
-        - Robot moves to this point first
-        - When robot is within 5-10cm, trajectory starts moving
-        """
+        """Generate Path message with trajectory reference points"""
         path_msg = Path()
         path_msg.header.stamp = self.get_clock().now().to_msg()
         path_msg.header.frame_id = 'map'
-        
-        # 🎯 LEAD-IN POINT: Place static point before trajectory start
-        # This gives robot a target to reach before trajectory begins moving
-        x_start, y_start, theta_start = self.trajectory_reference(0.0)  # Get trajectory start position
-        
-        # Calculate lead-in point: back up along trajectory direction
-        lead_in_x = x_start - self.lead_in_distance * math.cos(theta_start)
-        lead_in_y = y_start - self.lead_in_distance * math.sin(theta_start)
-        
-        # Add lead-in point as FIRST point in path
-        lead_in_pose = PoseStamped()
-        lead_in_pose.header.stamp = path_msg.header.stamp
-        lead_in_pose.header.frame_id = 'map'
-        lead_in_pose.pose.position.x = lead_in_x
-        lead_in_pose.pose.position.y = lead_in_y
-        lead_in_pose.pose.position.z = 0.0
-        qx, qy, qz, qw = self.quaternion_from_euler(0.0, 0.0, theta_start)
-        lead_in_pose.pose.orientation.x = qx
-        lead_in_pose.pose.orientation.y = qy
-        lead_in_pose.pose.orientation.z = qz
-        lead_in_pose.pose.orientation.w = qw
-        path_msg.poses.append(lead_in_pose)
         
         # Generate path points looking ahead (not the entire path, just reference points)
         dt_path = self.preview_time / self.path_points  # Time interval for each point
@@ -354,9 +302,8 @@ class TrajectoryPublisher(Node):
             x_ref, y_ref, theta_ref = self.trajectory_reference(self.current_time)
             
             # Log periodically for debugging purposes
-            status = '▶️ ACTIVE' if self.trajectory_active else '⏸️  PAUSED'
             self.get_logger().info(
-                f'{status} | t={self.current_time:.2f}s | '
+                f'Published trajectory | t={self.current_time:.2f}s | '
                 f'ref: x={x_ref:.3f}, y={y_ref:.3f}, θ={math.degrees(theta_ref):.1f}°',
                 throttle_duration_sec=2.0
             )
@@ -369,10 +316,8 @@ class TrajectoryPublisher(Node):
                 throttle_duration_sec=2.0
             )
         
-        # 🚀 Update time ONLY if trajectory is active (robot reached lead-in point)
-        if self.trajectory_active:
-            self.current_time += self.dt
-        # else: time stays at 0, trajectory stays static at start position
+        # Update time for the next set of points
+        self.current_time += self.dt
 
 
 

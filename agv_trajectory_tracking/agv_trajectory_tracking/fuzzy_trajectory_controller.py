@@ -15,7 +15,6 @@ from geometry_msgs.msg import TwistStamped, PoseWithCovarianceStamped
 import math
 import signal
 import sys
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 
 def quaternion_to_euler(x, y, z, w):
@@ -73,13 +72,6 @@ class FuzzyTrajectoryController(Node):
     def __init__(self):
         super().__init__('fuzzy_trajectory_controller')
         
-        reliable_qos = QoSProfile(
-            reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.VOLATILE,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=10
-        )
-        
         # Parameters
         self.declare_parameter('wheel_base', 0.46)
         self.declare_parameter('max_linear_vel', 1.0)
@@ -88,7 +80,6 @@ class FuzzyTrajectoryController(Node):
         self.declare_parameter('goal_tolerance', 0.15)
         self.declare_parameter('enable_path_publish', True)  # Enable/disable path publishing
         self.declare_parameter('verbose_logging', True)       # Enable detailed velocity logging
-        self.declare_parameter('auto_approach', True)          # Auto-navigate to lead-in point
         
         self.wheel_base = self.get_parameter('wheel_base').value
         self.max_linear_vel = self.get_parameter('max_linear_vel').value
@@ -97,38 +88,16 @@ class FuzzyTrajectoryController(Node):
         self.goal_tolerance = self.get_parameter('goal_tolerance').value
         self.enable_path_publish = self.get_parameter('enable_path_publish').value
         self.verbose_logging = self.get_parameter('verbose_logging').value
-        self.auto_approach = self.get_parameter('auto_approach').value
         
         # 🔧 CRITICAL: Maximum wheel velocity constraint (1.0 m/s per wheel)
         self.max_wheel_vel = 1.0  # m/s - hardware limit for each motor
         
-        # Approach mode state (navigate to lead-in point before trajectory)
-        self.in_approach_mode = self.auto_approach  # Start in approach mode if enabled
-        self.approach_complete = not self.auto_approach  # Skip if auto_approach disabled
-        
-        # Robot state (hybrid: odometry + AMCL correction)
+        # Robot state
         self.robot_x = 0.0
         self.robot_y = 0.0
         self.robot_theta = 0.0
         self.current_path = None
         self.path_received = False
-        
-        # Hybrid pose tracking: odometry (smooth) + AMCL correction (map-aligned)
-        self.odom_x = 0.0
-        self.odom_y = 0.0
-        self.odom_theta = 0.0
-        self.amcl_x = 0.0
-        self.amcl_y = 0.0
-        self.amcl_theta = 0.0
-        self.offset_x = 0.0  # Correction offset from AMCL
-        self.offset_y = 0.0
-        self.offset_theta = 0.0
-        
-        # 🚀 NEW: Lead-in phase - hold trajectory until robot reaches lead-in point
-        self.lead_in_point_x = None
-        self.lead_in_point_y = None
-        self.waiting_for_lead_in = True
-        self.lead_in_distance_threshold = 0.07  # 7cm - start trajectory when within this distance
         
         # Shutdown flag
         self.is_shutdown = False
@@ -137,26 +106,16 @@ class FuzzyTrajectoryController(Node):
         self.startup_delay = 4.0  # seconds - Wait for trajectory publisher to start
         self.controller_ready = False
         
-        # ROS2 publishers
-        self.cmd_vel_pub = self.create_publisher(TwistStamped, '/diff_cont/cmd_vel', reliable_qos)
+        # ROS2 interfaces
+        self.cmd_vel_pub = self.create_publisher(TwistStamped, '/diff_cont/cmd_vel', 10)
         
-        # 🚀 NEW: Signal to trajectory_publisher to start moving
-        from std_msgs.msg import Bool
-        self.traj_start_pub = self.create_publisher(Bool, '/trajectory_start_signal', 10)
-        
-        # Subscribe to AMCL pose for map correction
+        # Subscribe to AMCL pose for robot localization
         self.pose_sub = self.create_subscription(
             PoseWithCovarianceStamped, '/amcl_pose', 
-            self.amcl_pose_callback, reliable_qos)
-        
-        # Subscribe to odometry for smooth real-time tracking
-        from nav_msgs.msg import Odometry
-        self.odom_sub = self.create_subscription(
-            Odometry, '/odometry/filtered',
-            self.odom_callback, reliable_qos)
+            self.amcl_pose_callback, 10)
         
         self.path_sub = self.create_subscription(Path, '/trajectory', 
-                                                  self.path_callback, reliable_qos)
+                                                  self.path_callback, 10)
         
         # Initialize fuzzy system
         self.get_logger().info('Initializing fuzzy system...')
@@ -343,67 +302,24 @@ class FuzzyTrajectoryController(Node):
         return v, omega
     
     def amcl_pose_callback(self, msg):
-        """Update map-correction offset from AMCL
+        """Update robot pose from AMCL localization
         
-        AMCL provides map-corrected pose. We use it to calculate
-        the offset between odometry and map frame.
+        AMCL provides pose estimation in the map frame, which is more
+        accurate than raw odometry as it corrects for drift using
+        particle filter localization.
         """
-        self.amcl_x = msg.pose.pose.position.x
-        self.amcl_y = msg.pose.pose.position.y
+        self.robot_x = msg.pose.pose.position.x
+        self.robot_y = msg.pose.pose.position.y
         orientation_q = msg.pose.pose.orientation
-        _, _, self.amcl_theta = quaternion_to_euler(
+        _, _, self.robot_theta = quaternion_to_euler(
             orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w
         )
-        
-        # Calculate offset between AMCL (map-corrected) and odometry
-        self.offset_x = self.amcl_x - self.odom_x
-        self.offset_y = self.amcl_y - self.odom_y
-        # Normalize angle difference
-        dtheta = self.amcl_theta - self.odom_theta
-        self.offset_theta = math.atan2(math.sin(dtheta), math.cos(dtheta))
-    
-    def odom_callback(self, msg):
-        """Update robot pose from odometry - primary source for smooth tracking
-        
-        Odometry provides smooth, high-frequency pose updates.
-        We apply AMCL correction offset to get map-aligned pose.
-        """
-        # Extract odometry pose
-        self.odom_x = msg.pose.pose.position.x
-        self.odom_y = msg.pose.pose.position.y
-        orientation_q = msg.pose.pose.orientation
-        _, _, self.odom_theta = quaternion_to_euler(
-            orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w
-        )
-        
-        # Apply AMCL correction offset to get map-aligned pose
-        self.robot_x = self.odom_x + self.offset_x
-        self.robot_y = self.odom_y + self.offset_y
-        raw_theta = self.odom_theta + self.offset_theta
-        # Normalize angle to [-pi, pi]
-        self.robot_theta = math.atan2(math.sin(raw_theta), math.cos(raw_theta))
     
     def path_callback(self, msg):
-        """Receive trajectory - extract lead-in point (first point before trajectory starts)
-        
-        The trajectory publisher adds a lead-in point as the first pose.
-        Robot must reach this point before the actual trajectory starts moving.
-        """
+        """Receive trajectory"""
         self.current_path = msg
         self.path_received = True
-        
-        # 🚀 Extract lead-in point (first point in trajectory)
-        if self.lead_in_point_x is None and len(msg.poses) > 0:
-            # First point is the lead-in point
-            self.lead_in_point_x = msg.poses[0].pose.position.x
-            self.lead_in_point_y = msg.poses[0].pose.position.y
-            self.waiting_for_lead_in = True
-            self.get_logger().info(
-                f'Trajectory: {len(msg.poses)} points | '
-                f'Lead-in point at ({self.lead_in_point_x:.3f}, {self.lead_in_point_y:.3f})'
-            )
-        else:
-            self.get_logger().info(f'Trajectory updated: {len(msg.poses)} points')
+        self.get_logger().info(f'Trajectory: {len(msg.poses)} points')
     
     def find_closest_point(self, path, x, y):
         """Find closest point on path AHEAD of robot (critical for Figure-8 crossover)"""
@@ -454,17 +370,16 @@ class FuzzyTrajectoryController(Node):
         closest_idx = best_idx
         min_dist = best_dist
         
-        # 🔧 OPTIMIZED v13: ZERO/MINIMAL lookahead for direct tracking
-        # Hardware delays require tracking current/immediate point only
-        # No predictive lookahead - react to current position
+        # 🔧 IMPROVED v11: MODERATE lookahead for smooth tracking
+        # With ahead detection, we can safely use more lookahead
         if min_dist < 0.10:  # Very close to path
-            lookahead_points = 0  # ZERO lookahead - track current point
+            lookahead_points = 4  # Small lookahead for smooth following
         elif min_dist < 0.20:  # Close
-            lookahead_points = 1  # Track just next point
+            lookahead_points = 5  # Moderate lookahead
         elif min_dist < 0.40:  # Medium distance
-            lookahead_points = 2  # Small correction
+            lookahead_points = 6  # More lookahead
         else:  # Far from path
-            lookahead_points = 3  # Moderate catch-up
+            lookahead_points = 7  # Larger lookahead to catch up
         
         target_idx = min(closest_idx + lookahead_points, len(path.poses) - 1)
         
@@ -507,15 +422,6 @@ class FuzzyTrajectoryController(Node):
         e_theta_deg = math.degrees(e_theta_rad)
         
         return e_d, e_theta_deg
-    
-    def publish_cmd_vel(self, v, omega):
-        """Publish velocity command"""
-        cmd_vel = TwistStamped()
-        cmd_vel.header.stamp = self.get_clock().now().to_msg()
-        cmd_vel.header.frame_id = 'base_link'
-        cmd_vel.twist.linear.x = v
-        cmd_vel.twist.angular.z = omega
-        self.cmd_vel_pub.publish(cmd_vel)
     
     def wheel_to_twist(self, v_left, v_right):
         """Convert wheel velocities to twist"""
@@ -575,72 +481,6 @@ class FuzzyTrajectoryController(Node):
             return
         if len(self.current_path.poses) == 0:
             return
-        
-        # 🚀 APPROACH MODE: Navigate directly to lead-in point before tracking
-        if self.in_approach_mode and self.lead_in_point_x is not None:
-            dist_to_lead_in = math.sqrt(
-                (self.robot_x - self.lead_in_point_x)**2 + 
-                (self.robot_y - self.lead_in_point_y)**2
-            )
-            
-            if dist_to_lead_in > self.lead_in_distance_threshold:
-                # Navigate to lead-in point using simple P controller
-                dx = self.lead_in_point_x - self.robot_x
-                dy = self.lead_in_point_y - self.robot_y
-                target_angle = math.atan2(dy, dx)
-                angle_error = target_angle - self.robot_theta
-                # Normalize angle error to [-pi, pi]
-                angle_error = math.atan2(math.sin(angle_error), math.cos(angle_error))
-                
-                # Simple navigation control
-                v = min(0.3, 0.5 * dist_to_lead_in)  # P control for forward
-                omega = 2.0 * angle_error  # P control for turning
-                
-                # Limit velocities
-                v = max(0.0, min(v, self.max_linear_vel))
-                omega = max(-self.max_angular_vel, min(omega, self.max_angular_vel))
-                
-                self.publish_cmd_vel(v, omega)
-                self.get_logger().info(
-                    f'🚶 Approaching lead-in: {dist_to_lead_in*100:.1f}cm (v={v:.2f}, ω={omega:.2f})',
-                    throttle_duration_sec=0.5
-                )
-                return
-            else:
-                # Reached lead-in point
-                self.in_approach_mode = False
-                self.approach_complete = True
-                self.get_logger().info(
-                    f'✅ Reached lead-in point! Switching to trajectory tracking mode.'
-                )
-        
-        # 🚀 LEAD-IN PHASE: track to lead-in point, trajectory stays static
-        # Once robot is close enough, signal trajectory_publisher to start moving
-        if self.waiting_for_lead_in and self.lead_in_point_x is not None:
-            dist_to_lead_in = math.sqrt(
-                (self.robot_x - self.lead_in_point_x)**2 + 
-                (self.robot_y - self.lead_in_point_y)**2
-            )
-            
-            if dist_to_lead_in > self.lead_in_distance_threshold:
-                # Not close enough - keep tracking to lead-in point
-                # Trajectory publisher holds static until we signal ready
-                self.get_logger().info(
-                    f'🎯 Lead-in: {dist_to_lead_in*100:.1f}cm to start (need <{self.lead_in_distance_threshold*100:.0f}cm)',
-                    throttle_duration_sec=0.5
-                )
-                # Continue to normal tracking logic below (will track to lead-in point)
-            else:
-                # Close enough - signal trajectory to start!
-                self.waiting_for_lead_in = False
-                self.get_logger().info(
-                    f'✅ START! Robot at lead-in point ({dist_to_lead_in*100:.1f}cm) - Signaling trajectory to move!'
-                )
-                # 🚀 Publish signal to trajectory_publisher to start moving
-                from std_msgs.msg import Bool
-                start_signal = Bool()
-                start_signal.data = True
-                self.traj_start_pub.publish(start_signal)
         
         # Compute errors
         e_d, e_theta_deg = self.compute_tracking_errors()
