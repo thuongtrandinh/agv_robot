@@ -125,24 +125,22 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # ============================
-    #  motor_odom: publishes /diff_cont/odom from /motor_feedback + /imu
+    #  stm32_odom: publishes /diff_cont/odom + /imu from /sensor_data
     # ============================
-    motor_odom = Node(
+    stm32_odom = Node(
         package='mobile_robot',
-        executable='motor_odom',
-        name='motor_odom',
+        executable='stm32_odom',
+        name='stm32_odom',
         output='screen',
         parameters=[
             {'wheel_radius': 0.05},
             {'wheel_separation': 0.46},
-            {'left_index': 1},
-            {'right_index': 0},
-            {'feedback_is_linear_velocity': True},
+            {'sensor_data_topic': '/sensor_data'},
+            {'odom_topic': '/diff_cont/odom'},
             {'imu_topic': '/imu'},
-            {'motor_topic': '/motor_feedback'},
-            {'odom_topic': '/diff_cont/odom'},   # motor_odom is canonical odom source
             {'odom_frame': 'odom'},
             {'base_frame': 'base_footprint'},
+            {'odom_publish_rate': 50.0},
         ]
     )
 
@@ -191,7 +189,7 @@ def launch_setup(context, *args, **kwargs):
 
     # sensors / visualisation
     # append rviz2 only if created
-    sensors_nodes = [aruco_detector, lidar_node, motor_odom]
+    sensors_nodes = [aruco_detector, lidar_node, stm32_odom]
     if rviz2:
         sensors_nodes.append(rviz2)
     nodes += sensors_nodes
