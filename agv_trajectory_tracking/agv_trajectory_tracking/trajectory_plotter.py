@@ -199,7 +199,7 @@ class TrajectoryPlotter(Node):
             ax2.set_xlabel('Time (s)'); ax2.set_ylabel('Cross-Track Error (m)')
             # Mention ignored window if applicable
             if self.ignore_time_to > self.ignore_time_from:
-                ax2.set_title(f'Tracking Error (Geometry Distance) — ignored {self.ignore_time_from:.0f}-{self.ignore_time_to:.0f}s')
+                ax2.set_title(f'Tracking Error (Geometry Distance)')
             else:
                 ax2.set_title('Tracking Error (Geometry Distance)')
             ax2.legend(); ax2.grid(True)
