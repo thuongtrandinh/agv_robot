@@ -93,9 +93,9 @@ def launch_setup(context, *args, **kwargs):
             {"distance_scaling": 0.00005}
         ],
         # Remap ArUco pose to AMCL's initialpose topic for automatic correction
-        remappings=[
-            ("/aruco/pose_with_covariance", "/initialpose")
-        ]
+        # remappings=[
+        #     ("/aruco/pose_with_covariance", "/initialpose")
+        # ]
     )
 
     lifecycle = Node(

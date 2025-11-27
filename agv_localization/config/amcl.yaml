@@ -1,70 +1,39 @@
 amcl:
   ros__parameters:
-    use_sim_time: false # Đã được set từ launch file, nhưng cứ để false ở đây cho chắc
-
+    use_sim_time: false
+    
     # Frames
     global_frame_id: "map"
     odom_frame_id: "odom"
     base_frame_id: "base_footprint"
 
-    # ODOMETRY MODEL
+    # TIN TƯỞNG ODOM TUYỆT ĐỐI (Noise cực thấp)
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
-    alpha1: 0.02  # Tăng nhẹ để bù trừ sai số quay
-    alpha2: 0.02
-    alpha3: 0.02
-    alpha4: 0.02
-    alpha5: 0.02
+    alpha1: 0.001 
+    alpha2: 0.001
+    alpha3: 0.001
+    alpha4: 0.001
+    alpha5: 0.001
 
-    # Sensor topics
-    scan_topic: /scan
-    scan_queue_size: 10
+    # QUAN TRỌNG: NGƯỠNG CẬP NHẬT CAO
+    # Robot phải đi 0.5m hoặc xoay 0.5 rad (~30 độ) mới tính toán lại vị trí 1 lần
+    # Điều này giúp robot KHÔNG BAO GIỜ bị nhảy khi đứng yên
+    update_min_d: 2.0
+    update_min_a: 2.0
 
-    # Transform & timing
-    tf_broadcast: true
-    transform_tolerance: 3.0  # <--- TĂNG LÊN CAO
-    
-    # Update logic (CRITICAL FIX)
-    update_min_a: 0.20  # ~11 độ mới cập nhật 1 lần
-    update_min_d: 0.20  # 20cm mới cập nhật 1 lần
-
-    # Initial pose
-    set_initial_pose: true
-    initial_pose:
-      x: 0.0
-      y: 0.0
-      z: 0.0
-      yaw: 0.0
-
-    # Particle filter settings
-    max_particles: 1000  # <--- GIẢM TẢI CPU
-    min_particles: 500
-    pf_err: 0.02
-    pf_z: 0.99
-    resample_interval: 2
-
-    # Laser model
+    # Lidar Model (Coi như nhiễu cao)
     laser_model_type: "likelihood_field"
     max_beams: 60
-    laser_max_range: 16.0 # Giới hạn range thực tế của Lidar (RPLidar A2M8 là 16m)
-    laser_min_range: 0.1
-    laser_likelihood_max_dist: 2.0 
-
-    # Laser model weights (Relaxed)
-    z_hit: 0.80
-    z_short: 0.05
-    z_max: 0.05
-    z_rand: 0.10
+    z_hit: 0.5
+    z_rand: 0.5       # Coi 50% dữ liệu lidar là nhiễu
     sigma_hit: 0.2
-    lambda_short: 0.1
-
-    # Beam skip
-    do_beamskip: true
-    beam_skip_distance: 0.5
-    beam_skip_error_threshold: 0.9
-    beam_skip_threshold: 0.3
-
-    # Recovery
-    recovery_alpha_slow: 0.001
-    recovery_alpha_fast: 0.1
-
-    save_pose_rate: 1.0  # Không cần lưu pose quá nhanh, 1Hz là đủ
+    
+    # Particles
+    max_particles: 2000
+    min_particles: 500
+    
+    # Misc
+    tf_broadcast: true
+    transform_tolerance: 3.0
+    set_initial_pose: true
+    initial_pose: {x: 0.0, y: 0.0, z: 0.0, yaw: 0.0}

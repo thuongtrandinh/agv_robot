@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
 """
-Fuzzy Trajectory Tracking Controller (Direct Control Mode)
+Fuzzy Trajectory Tracking Controller (Anti-Zigzag / Smoother Version)
 Author: Thuong Tran Dinh
 Updated: November 27, 2025
 
-Logic: 
-- Pure Sugeno Fuzzy Logic -> Direct Twist Command
-- Relies on STM32 PID for dynamic smoothing
-- Relies on Trajectory Publisher's 'ramp_time' for reference smoothing
+Key Improvements:
+1. TF Listener for Pose (Syncs Map -> Odom -> Base)
+2. Angular Deadzone to prevent oscillation
+3. Low Gain near zero error
+4. Dynamic Lookahead for smooth steering
 """
 
 import rclpy
 from rclpy.node import Node
+from rclpy.duration import Duration
 from nav_msgs.msg import Path
-from geometry_msgs.msg import TwistStamped, PoseWithCovarianceStamped
+from geometry_msgs.msg import TwistStamped
+from tf2_ros import Buffer, TransformListener, LookupException, ConnectivityException, ExtrapolationException
 import math
 import signal
 import sys
@@ -59,7 +62,7 @@ class FuzzyTrajectoryController(Node):
         self.declare_parameter('wheel_base', 0.42)
         self.declare_parameter('max_linear_vel', 0.4) 
         self.declare_parameter('max_angular_vel', 0.8) 
-        self.declare_parameter('control_frequency', 20.0) # Đồng bộ với tần số STM32
+        self.declare_parameter('control_frequency', 20.0)
         self.declare_parameter('goal_tolerance', 0.10)
         self.declare_parameter('verbose_logging', True)
         
@@ -70,7 +73,6 @@ class FuzzyTrajectoryController(Node):
         self.goal_tolerance = self.get_parameter('goal_tolerance').value
         self.verbose_logging = self.get_parameter('verbose_logging').value
         
-        # Giới hạn phần cứng (Safety only)
         self.max_wheel_vel = 0.5 
         
         # State
@@ -84,20 +86,19 @@ class FuzzyTrajectoryController(Node):
         
         # --- ROS2 INTERFACES ---
         self.cmd_vel_pub = self.create_publisher(TwistStamped, '/diff_cont/cmd_vel', 10)
-        self.pose_sub = self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.amcl_pose_callback, 10)
         self.path_sub = self.create_subscription(Path, '/trajectory', self.path_callback, 10)
+        
+        # TF Buffer for Pose Lookup (Replaces /amcl_pose subscription)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
             
-        # Initialize Fuzzy Logic
         self.setup_fuzzy_system()
         
-        # Startup Delays
         self.startup_delay = 4.0
         self.startup_timer = self.create_timer(self.startup_delay, self.on_controller_ready)
-        
-        # Control Loop Timer
         self.control_timer = self.create_timer(1.0/self.control_freq, self.control_loop)
         
-        self.get_logger().info('✅ Direct Fuzzy Controller Initialized (Targeting STM32 PID)')
+        self.get_logger().info('✅ Anti-Zigzag Fuzzy Controller Initialized (TF-Based)')
 
     def on_controller_ready(self):
         self.controller_ready = True
@@ -123,12 +124,19 @@ class FuzzyTrajectoryController(Node):
             'PM': ('tri', [5, 15, 30]),
             'PB': ('trap', [15, 30, 180, 180])
         }
-        # Angular Velocity Outputs
+        
+        # --- TUNED OUTPUTS FOR STABILITY (ANTI-ZIGZAG) ---
+        # Reduced gains for small errors (NS/PS -> 0.1)
         self.angular_vel_constants = {
-            'NB': -1.0, 'NM': -0.8, 'NS': -0.08, 'Z': 0.0,
-            'PS': 0.08, 'PM': 0.8, 'PB': 1.0, 
+            'NB': -1.0, 
+            'NM': -0.7, 
+            'NS': -0.1,  # Low gain
+            'Z': 0.0,
+            'PS': 0.1,   # Low gain
+            'PM': 0.7, 
+            'PB': 1.0, 
         }
-        # Rule Base
+        
         self.angular_rules = {
             'NB': 'NB', 'NM': 'NM', 'NS': 'NS', 'ZE': 'Z',
             'PS': 'PS', 'PM': 'PM', 'PB': 'PB',
@@ -142,6 +150,11 @@ class FuzzyTrajectoryController(Node):
         return memberships
 
     def fuzzy_inference(self, e_d, e_theta_deg):
+        # --- ANGULAR DEADZONE ---
+        # Ignore small angle errors (< 2 deg) to prevent oscillation
+        if abs(e_theta_deg) < 2.0: 
+            e_theta_deg = 0.0
+
         # 1. Angular Velocity
         e_theta_fuzz = self.fuzzify(e_theta_deg, self.e_theta_mf)
         omega_num, omega_den = 0.0, 0.0
@@ -152,16 +165,14 @@ class FuzzyTrajectoryController(Node):
                 omega_den += strength
         omega = omega_num / omega_den if omega_den > 0 else 0.0
         
-        # 2. Linear Velocity Logic (Heuristic)
+        # 2. Linear Velocity Logic
         abs_angle = abs(e_theta_deg)
-        # Sharp corner handling
-        if abs_angle > 75 and e_d < 0.4:
+        if abs_angle > 75 and e_d < 0.4: # Sharp corner
             if e_d < 0.15: v = 0.08
             elif e_d < 0.30: v = 0.12
             else: v = 0.16
             omega = omega * 1.2
-        else:
-            # Smooth curve handling
+        else: # Normal driving
             if e_d < 0.10: v_base = 0.32
             elif e_d < 0.25: v_base = 0.33
             elif e_d < 0.50: v_base = 0.34
@@ -177,28 +188,41 @@ class FuzzyTrajectoryController(Node):
         
         return v, omega
 
-    def amcl_pose_callback(self, msg):
-        self.robot_x = msg.pose.pose.position.x
-        self.robot_y = msg.pose.pose.position.y
-        q = msg.pose.pose.orientation
-        _, _, self.robot_theta = quaternion_to_euler(q.x, q.y, q.z, q.w)
+    def get_robot_pose_from_tf(self):
+        """Get robot pose from TF (map -> base_footprint)"""
+        try:
+            # Use most recent transform available
+            trans = self.tf_buffer.lookup_transform(
+                'map', 'base_footprint', rclpy.time.Time())
+            
+            self.robot_x = trans.transform.translation.x
+            self.robot_y = trans.transform.translation.y
+            q = trans.transform.rotation
+            _, _, self.robot_theta = quaternion_to_euler(q.x, q.y, q.z, q.w)
+            return True
+        except (LookupException, ConnectivityException, ExtrapolationException) as e:
+            # Only warn every 2 seconds to avoid spamming
+            self.get_logger().warn(f'TF Lookup Failed: {e}', throttle_duration_sec=2.0)
+            return False
 
     def path_callback(self, msg):
         self.current_path = msg
         self.path_received = True
 
     def find_closest_point(self, path, x, y):
-        # Lookahead Logic
+        # Lookahead Logic - INCREASED FOR SMOOTHNESS
         best_idx, best_dist = -1, float('inf')
         for i, pose_stamped in enumerate(path.poses):
             pose = pose_stamped.pose.position
             dist = math.sqrt((pose.x - x)**2 + (pose.y - y)**2)
             dx, dy = pose.x - x, pose.y - y
             angle_diff = math.atan2(dy, dx) - self.robot_theta
+            
+            # Normalize angle
             while angle_diff > math.pi: angle_diff -= 2*math.pi
             while angle_diff < -math.pi: angle_diff += 2*math.pi
             
-            # Prefer points in front
+            # Prefer points in front (+/- 90 deg) or very close
             if abs(angle_diff) < math.pi/2.0 or dist < 0.3:
                 if dist < best_dist: best_dist, best_idx = dist, i
         
@@ -210,10 +234,12 @@ class FuzzyTrajectoryController(Node):
             best_idx, best_dist = closest_idx, min_dist
 
         min_dist = best_dist
-        if min_dist < 0.10: lookahead = 5
-        elif min_dist < 0.20: lookahead = 6
-        elif min_dist < 0.40: lookahead = 8
-        else: lookahead = 10
+        # Increased lookahead points to cut corners smoothly
+        if min_dist < 0.10: lookahead = 8   # Was 5
+        elif min_dist < 0.20: lookahead = 10 # Was 6
+        elif min_dist < 0.40: lookahead = 12 # Was 8
+        else: lookahead = 15                 # Was 10
+        
         return min(best_idx + lookahead, len(path.poses) - 1)
 
     def compute_errors(self):
@@ -245,12 +271,17 @@ class FuzzyTrajectoryController(Node):
 
     def control_loop(self):
         if not self.controller_ready or self.is_shutdown: return
+        
+        # 1. Update Pose from TF (Replaces AMCL subscription)
+        if not self.get_robot_pose_from_tf():
+            return # Skip if no pose available
+            
         if not self.path_received or not self.current_path: return
         
-        # 1. Compute Errors
+        # 2. Compute Errors
         e_d, e_theta_deg = self.compute_errors()
         
-        # 2. Check Goal
+        # 3. Check Goal
         goal = self.current_path.poses[-1].pose.position
         dist_to_goal = math.sqrt((goal.x - self.robot_x)**2 + (goal.y - self.robot_y)**2)
         if dist_to_goal < self.goal_tolerance:
@@ -258,13 +289,13 @@ class FuzzyTrajectoryController(Node):
             self.get_logger().info('🏁 Goal Reached!', throttle_duration_sec=2.0)
             return
             
-        # 3. Fuzzy Inference
+        # 4. Fuzzy Inference
         target_v, target_w = self.fuzzy_inference(e_d, e_theta_deg)
         
-        # 4. Safety Limit (Không phải smoothing)
+        # 5. Safety Limit
         final_v, final_w = self.limit_wheel_velocities(target_v, target_w)
         
-        # 5. Publish Directly
+        # 6. Publish Directly
         self.publish_cmd(final_v, final_w)
         
         if self.verbose_logging:
