@@ -14,6 +14,8 @@ setup(
         ('share/' + package_name, ['package.xml']),
         # Install launch files
         (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+        # Install results directory (empty initially, will be created if not exists)
+        (os.path.join('share', package_name, 'results'), []),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
