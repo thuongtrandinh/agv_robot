@@ -156,10 +156,10 @@ class FuzzyTrajectoryController(Node):
         if best_idx == -1: best_idx = 0
         
         min_dist = best_dist
-        if min_dist < 0.10: lookahead = 8   
-        elif min_dist < 0.20: lookahead = 10 
-        elif min_dist < 0.40: lookahead = 12 
-        else: lookahead = 15                 
+        if min_dist < 0.10: lookahead = 10   
+        elif min_dist < 0.20: lookahead = 12 
+        elif min_dist < 0.40: lookahead = 15 
+        else: lookahead = 20                 
         return min(best_idx + lookahead, len(path.poses) - 1)
 
     def compute_errors(self):
