@@ -14,10 +14,14 @@ class MotorOdomNode : public rclcpp::Node {
 public:
   MotorOdomNode() : Node("stm32_odom") {
     // === PARAMETERS ===
-    this->declare_parameter<double>("wheel_radius", 0.05);      // Đã cập nhật
-    this->declare_parameter<double>("wheel_separation", 0.42);  // Đã cập nhật từ 0.46 -> 0.42
+    this->declare_parameter<double>("wheel_radius", 0.05);      
+    this->declare_parameter<double>("wheel_separation", 0.42);  
     this->declare_parameter<double>("odom_publish_rate", 50.0);
     
+    // 🔥 NEW PARAMETER: GYRO SCALE FACTOR
+    // Đã tính toán từ thực nghiệm: 90 / 86 = 1.046. Nhân với hệ số cũ 1.274 -> 1.333
+    this->declare_parameter<double>("gyro_scale_factor", 1.333); 
+
     // Topics
     this->declare_parameter<std::string>("sensor_data_topic", "/sensor_data");
     this->declare_parameter<std::string>("odom_topic", "/diff_cont/odom");
@@ -28,12 +32,13 @@ public:
     // Get Params
     wheel_radius_ = this->get_parameter("wheel_radius").as_double();
     wheel_separation_ = this->get_parameter("wheel_separation").as_double();
+    gyro_scale_factor_ = this->get_parameter("gyro_scale_factor").as_double();
 
     double pub_rate = this->get_parameter("odom_publish_rate").as_double();
     odom_publish_period_ = rclcpp::Duration::from_seconds(1.0 / pub_rate);
     last_pub_time_ = this->now();
 
-    // Topics
+    // Strings
     std::string sensor_topic = this->get_parameter("sensor_data_topic").as_string();
     std::string odom_topic = this->get_parameter("odom_topic").as_string();
     std::string imu_topic = this->get_parameter("imu_topic").as_string();
@@ -51,98 +56,78 @@ public:
     last_time_ = this->now();
     resetOdometry();
 
-    RCLCPP_INFO(this->get_logger(), "✅ STM32 Odom Node Started. Radius: %.3f, Base: %.3f", 
-                wheel_radius_, wheel_separation_);
+    RCLCPP_INFO(this->get_logger(), "✅ STM32 Odom Ready. Scale Factor: %.3f", gyro_scale_factor_);
   }
 
 private:
   void resetOdometry() {
-    x_ = 0.0;
-    y_ = 0.0;
-    yaw_ = 0.0;
+    x_ = 0.0; y_ = 0.0; yaw_ = 0.0;
   }
 
   void sensorDataCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg) {
     rclcpp::Time now = this->now();
-
-    // Validate data format
     if (msg->data.size() < 8) return;
 
     // 1. Extract Data
-    // [gyro_x, gyro_y, gyro_z, acc_x, acc_y, acc_z, speed_left, speed_right]
     double gyro_x = msg->data[0];
     double gyro_y = msg->data[1];
-    double gyro_z = msg->data[2]; // rad/s
+    double gyro_z = msg->data[2]; 
     
-    double acc_x = msg->data[3];  // m/s^2
+    double acc_x = msg->data[3];
     double acc_y = msg->data[4];
     double acc_z = msg->data[5];
 
-    double v_left = msg->data[6];  // m/s
-    double v_right = msg->data[7]; // m/s
+    double v_left = msg->data[6];
+    double v_right = msg->data[7];
 
-    // Calculate dt
     double dt = (now - last_time_).seconds();
-    if (dt <= 0.0 || dt > 0.5) {
-      last_time_ = now;
-      return;
-    }
+    if (dt <= 0.0 || dt > 0.5) { last_time_ = now; return; }
 
-    // ========== 2. ODOMETRY CALCULATION (WITH ZUPT FIX) ==========
-    
+    // 2. Logic Calculation
     double vx = 0.0;
     double vtheta_fused = 0.0;
-
-    // Check if robot is stationary (Zero-Velocity Update)
-    // Threshold: 0.005 m/s (5mm/s)
     bool is_stationary = (std::abs(v_right) < 0.005) && (std::abs(v_left) < 0.005);
 
     if (is_stationary) {
-        // --- ROBOT ĐỨNG YÊN ---
-        // Ép mọi vận tốc về 0 để cắt đứt nhiễu trôi (Drift)
         vx = 0.0;
         vtheta_fused = 0.0; 
-        
-        // (Tùy chọn) Có thể reset gyro bias ở đây nếu muốn dynamic calibration
+        // Zero IMU drift when stationary
+        gyro_z = 0.0; gyro_x = 0.0; gyro_y = 0.0;
     } else {
-        // --- ROBOT DI CHUYỂN ---
-        // 1. Tính vận tốc dài từ trung bình 2 bánh
         vx = (v_right + v_left) / 2.0;
         
-        // 2. Tính vận tốc góc từ Encoder
-        double vtheta_encoder = (v_right - v_left) / wheel_separation_;
-
-        // 3. Sensor Fusion: Kết hợp Gyro và Encoder
-        // alpha = 0.8: Tin tưởng Gyro 80% (vì Gyro nhạy hơn khi quay)
-        const double alpha = 1.00;
-        vtheta_fused = alpha * gyro_z + (1.0 - alpha) * vtheta_encoder;
+        // 🔥 APPLY SCALE FACTOR HERE
+        // Nhân hệ số bù để sửa lỗi thiếu góc (Under-steering)
+        double gyro_z_corrected = gyro_z * gyro_scale_factor_;
+        
+        // Use 100% Gyro
+        vtheta_fused = gyro_z_corrected; 
+        
+        // Update raw gyro variable for IMU publishing too (consistency)
+        gyro_z = gyro_z_corrected;
     }
 
-    // ========== 3. INTEGRATION (Tích phân vị trí) ==========
+    // 3. Integration
     double d_yaw = vtheta_fused * dt;
-    double dx = vx * std::cos(yaw_) * dt; // Simple Euler integration
+    double dx = vx * std::cos(yaw_) * dt;
     double dy = vx * std::sin(yaw_) * dt;
 
     yaw_ += d_yaw;
     x_ += dx;
     y_ += dy;
 
-    // Normalize Yaw [-PI, PI]
+    // Normalize Yaw
     while (yaw_ > M_PI) yaw_ -= 2.0 * M_PI;
     while (yaw_ < -M_PI) yaw_ += 2.0 * M_PI;
 
-    // ========== 4. PUBLISH ==========
-    
-    // Chỉ publish theo tần số định sẵn (ví dụ 50Hz)
+    // 4. Publish (Throttled)
     if ((now - last_pub_time_) >= odom_publish_period_) {
-        
-        // --- A. Publish Odometry ---
+        // --- Odom Msg ---
         nav_msgs::msg::Odometry odom;
         odom.header.stamp = now;
         odom.header.frame_id = odom_frame_;
         odom.child_frame_id = base_frame_;
 
-        // Pose
         odom.pose.pose.position.x = x_;
         odom.pose.pose.position.y = y_;
         odom.pose.pose.position.z = 0.0;
@@ -154,54 +139,38 @@ private:
         odom.pose.pose.orientation.z = q.z();
         odom.pose.pose.orientation.w = q.w();
 
-        // Twist (Velocity)
         odom.twist.twist.linear.x = vx;
         odom.twist.twist.angular.z = vtheta_fused;
 
-        // Covariance (Cần thiết cho EKF)
-        // Pose covariance
-        odom.pose.covariance[0] = 0.001; // x
-        odom.pose.covariance[7] = 0.001; // y
-        odom.pose.covariance[35] = 0.001; // yaw
-        // Twist covariance
-        odom.twist.covariance[0] = 0.001; // vx
-        odom.twist.covariance[35] = 0.001; // vyaw
+        // Covariance
+        odom.pose.covariance[0] = 0.001; odom.pose.covariance[7] = 0.001; odom.pose.covariance[35] = 0.001;
+        odom.twist.covariance[0] = 0.001; odom.twist.covariance[35] = 0.001;
 
         odom_pub_->publish(odom);
 
-        // --- B. Publish TF (Odom -> Base) ---
-        // EKF sẽ publish map->odom, node này publish odom->base
+        // --- TF ---
         geometry_msgs::msg::TransformStamped tf_msg;
         tf_msg.header.stamp = now;
         tf_msg.header.frame_id = odom_frame_;
         tf_msg.child_frame_id = base_frame_;
-        
         tf_msg.transform.translation.x = x_;
         tf_msg.transform.translation.y = y_;
         tf_msg.transform.translation.z = 0.0;
         tf_msg.transform.rotation = odom.pose.pose.orientation;
-        
         tf_broadcaster_->sendTransform(tf_msg);
 
-        // --- C. Publish IMU (For EKF) ---
+        // --- IMU Msg ---
         sensor_msgs::msg::Imu imu_msg;
         imu_msg.header.stamp = now;
-        imu_msg.header.frame_id = "imu_link"; // Đảm bảo trùng với URDF
-
-        // Orientation (Lấy từ Odometry đã tính toán)
+        imu_msg.header.frame_id = "imu_link"; 
         imu_msg.orientation = odom.pose.pose.orientation;
-        
-        // Angular Velocity (Raw Gyro)
         imu_msg.angular_velocity.x = gyro_x;
         imu_msg.angular_velocity.y = gyro_y;
-        imu_msg.angular_velocity.z = gyro_z;
-
-        // Linear Acceleration (Raw Accel)
+        imu_msg.angular_velocity.z = gyro_z; // Scaled gyro
         imu_msg.linear_acceleration.x = acc_x;
         imu_msg.linear_acceleration.y = acc_y;
         imu_msg.linear_acceleration.z = acc_z;
         
-        // Covariance
         imu_msg.orientation_covariance[8] = 0.001;
         imu_msg.angular_velocity_covariance[8] = 0.001;
         imu_msg.linear_acceleration_covariance[0] = 0.01;
@@ -210,21 +179,15 @@ private:
 
         last_pub_time_ = now;
     }
-
     last_time_ = now;
   }
 
-  // Variables
-  double wheel_radius_;
-  double wheel_separation_;
+  // Members
+  double wheel_radius_, wheel_separation_, gyro_scale_factor_;
   double x_, y_, yaw_;
-  
-  rclcpp::Time last_time_;
-  rclcpp::Time last_pub_time_;
+  rclcpp::Time last_time_, last_pub_time_;
   rclcpp::Duration odom_publish_period_{rclcpp::Duration::from_seconds(0.0)};
-
   std::string odom_frame_, base_frame_;
-
   rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr sensor_sub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
