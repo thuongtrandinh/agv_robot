@@ -114,7 +114,7 @@ private:
 
         // 3. Sensor Fusion: Kết hợp Gyro và Encoder
         // alpha = 0.8: Tin tưởng Gyro 80% (vì Gyro nhạy hơn khi quay)
-        const double alpha = 0.8;
+        const double alpha = 0.98;
         vtheta_fused = alpha * gyro_z + (1.0 - alpha) * vtheta_encoder;
     }
 
