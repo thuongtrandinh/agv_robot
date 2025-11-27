@@ -17,10 +17,11 @@ amcl:
 
     # Sensor topics
     scan_topic: /scan
+    scan_queue_size: 10
 
     # Transform & timing
     tf_broadcast: true
-    transform_tolerance: 1.5  # <--- TĂNG LÊN CAO
+    transform_tolerance: 3.0  # <--- TĂNG LÊN CAO
     
     # Update logic (CRITICAL FIX)
     update_min_a: 0.20  # ~11 độ mới cập nhật 1 lần
@@ -35,7 +36,7 @@ amcl:
       yaw: 0.0
 
     # Particle filter settings
-    max_particles: 2000  # <--- GIẢM TẢI CPU
+    max_particles: 1000  # <--- GIẢM TẢI CPU
     min_particles: 500
     pf_err: 0.02
     pf_z: 0.99
@@ -44,7 +45,7 @@ amcl:
     # Laser model
     laser_model_type: "likelihood_field"
     max_beams: 60
-    laser_max_range: 12.0 # Giới hạn range thực tế của Lidar (ví dụ RPLidar A1 là 12m)
+    laser_max_range: 16.0 # Giới hạn range thực tế của Lidar (RPLidar A2M8 là 16m)
     laser_min_range: 0.1
     laser_likelihood_max_dist: 2.0 
 

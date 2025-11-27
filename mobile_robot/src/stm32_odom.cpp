@@ -6,41 +6,41 @@
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <cmath>
 
 using std::placeholders::_1;
 
 class MotorOdomNode : public rclcpp::Node {
 public:
   MotorOdomNode() : Node("stm32_odom") {
-    // Parameters (tune as needed)
-    this->declare_parameter<double>("wheel_radius", 0.05);
-    this->declare_parameter<double>("wheel_separation", 0.42);
-    // Throttle STM32 high-frequency data (>100Hz) to reasonable rate
+    // === PARAMETERS ===
+    this->declare_parameter<double>("wheel_radius", 0.05);      // Đã cập nhật
+    this->declare_parameter<double>("wheel_separation", 0.42);  // Đã cập nhật từ 0.46 -> 0.42
     this->declare_parameter<double>("odom_publish_rate", 50.0);
-    // Topics and frames
+    
+    // Topics
     this->declare_parameter<std::string>("sensor_data_topic", "/sensor_data");
     this->declare_parameter<std::string>("odom_topic", "/diff_cont/odom");
     this->declare_parameter<std::string>("imu_topic", "/imu");
     this->declare_parameter<std::string>("odom_frame", "odom");
     this->declare_parameter<std::string>("base_frame", "base_footprint");
 
+    // Get Params
     wheel_radius_ = this->get_parameter("wheel_radius").as_double();
     wheel_separation_ = this->get_parameter("wheel_separation").as_double();
 
     double pub_rate = this->get_parameter("odom_publish_rate").as_double();
-    if (pub_rate <= 0.0) pub_rate = 60.0;  // Default 50Hz - throttle STM32 variable rate (57-100Hz)
     odom_publish_period_ = rclcpp::Duration::from_seconds(1.0 / pub_rate);
-    // Initialize to allow immediate first publish
-    last_pub_time_ = this->now() - odom_publish_period_ - rclcpp::Duration::from_seconds(1.0);
+    last_pub_time_ = this->now();
 
+    // Topics
     std::string sensor_topic = this->get_parameter("sensor_data_topic").as_string();
     std::string odom_topic = this->get_parameter("odom_topic").as_string();
     std::string imu_topic = this->get_parameter("imu_topic").as_string();
     odom_frame_ = this->get_parameter("odom_frame").as_string();
     base_frame_ = this->get_parameter("base_frame").as_string();
 
-    // Subscribe to unified sensor_data topic from STM32
-    // Format: [gyro_x, gyro_y, gyro_z, acc_x, acc_y, acc_z, speed_left, speed_right]
+    // Subscribers & Publishers
     sensor_sub_ = create_subscription<std_msgs::msg::Float32MultiArray>(
       sensor_topic, 10, std::bind(&MotorOdomNode::sensorDataCallback, this, _1));
 
@@ -49,13 +49,10 @@ public:
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
     last_time_ = this->now();
-
-    // Reset odometry state on node startup
     resetOdometry();
 
-    RCLCPP_INFO(this->get_logger(),
-                "stm32_odom started. sensor_data_topic: %s (format: [gyro_x,y,z, acc_x,y,z, speed_L, speed_R]). Throttling output to %.1f Hz",
-                sensor_topic.c_str(), pub_rate);
+    RCLCPP_INFO(this->get_logger(), "✅ STM32 Odom Node Started. Radius: %.3f, Base: %.3f", 
+                wheel_radius_, wheel_separation_);
   }
 
 private:
@@ -63,156 +60,170 @@ private:
     x_ = 0.0;
     y_ = 0.0;
     yaw_ = 0.0;
-    last_gyro_z_ = 0.0;
-    RCLCPP_INFO(this->get_logger(), "Odometry state reset to initial values.");
   }
 
   void sensorDataCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg) {
     rclcpp::Time now = this->now();
 
-    // Validate message format: [gyro_x, gyro_y, gyro_z, acc_x, acc_y, acc_z, speed_left, speed_right]
-    if (msg->data.size() < 8) {
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-                          "sensor_data size %zu < 8 (expected [gyro_xyz, acc_xyz, speed_L, speed_R])", 
-                          msg->data.size());
-      return;
-    }
+    // Validate data format
+    if (msg->data.size() < 8) return;
 
-    // Extract IMU data (rad/s for gyro, m/s^2 for accel)
+    // 1. Extract Data
+    // [gyro_x, gyro_y, gyro_z, acc_x, acc_y, acc_z, speed_left, speed_right]
     double gyro_x = msg->data[0];
     double gyro_y = msg->data[1];
-    double gyro_z = msg->data[2];
-    double acc_x = msg->data[3];
+    double gyro_z = msg->data[2]; // rad/s
+    
+    double acc_x = msg->data[3];  // m/s^2
     double acc_y = msg->data[4];
     double acc_z = msg->data[5];
 
-    // Extract motor speeds (m/s linear velocity)
-    double v_right = msg->data[6];
-    double v_left = msg->data[7];
+    double v_left = msg->data[6];  // m/s
+    double v_right = msg->data[7]; // m/s
 
-    // Compute dt for integration
+    // Calculate dt
     double dt = (now - last_time_).seconds();
-    if (dt <= 0.0 || dt > 0.5) {  // Safety: reject huge dt spikes
+    if (dt <= 0.0 || dt > 0.5) {
       last_time_ = now;
       return;
     }
 
-    // ========== ODOMETRY CALCULATION ==========
-    // Compute robot velocities from wheel speeds
-    double vx = (v_right + v_left) / 2.0;
-      // FIXED: Đảo lại chiều encoder cho đúng thực tế (left turn = positive angular velocity)
-      double vtheta_encoder = ((v_right - v_left) / wheel_separation_);
+    // ========== 2. ODOMETRY CALCULATION (WITH ZUPT FIX) ==========
+    
+    double vx = 0.0;
+    double vtheta_fused = 0.0;
 
-    // Use IMU gyro_z for more accurate angular velocity (rad/s already)
-    // Low-pass filter to smooth gyro noise: alpha=0.7 (trust gyro 70%, encoder 30%)
-    const double alpha = 0.7;
-    double vtheta_fused = alpha * gyro_z + (1.0 - alpha) * vtheta_encoder;
+    // Check if robot is stationary (Zero-Velocity Update)
+    // Threshold: 0.005 m/s (5mm/s)
+    bool is_stationary = (std::abs(v_right) < 0.005) && (std::abs(v_left) < 0.005);
 
-    // Integrate pose using fused angular velocity
-    double dx = vx * dt;
-    double dtheta = vtheta_fused * dt;
+    if (is_stationary) {
+        // --- ROBOT ĐỨNG YÊN ---
+        // Ép mọi vận tốc về 0 để cắt đứt nhiễu trôi (Drift)
+        vx = 0.0;
+        vtheta_fused = 0.0; 
+        
+        // (Tùy chọn) Có thể reset gyro bias ở đây nếu muốn dynamic calibration
+    } else {
+        // --- ROBOT DI CHUYỂN ---
+        // 1. Tính vận tốc dài từ trung bình 2 bánh
+        vx = (v_right + v_left) / 2.0;
+        
+        // 2. Tính vận tốc góc từ Encoder
+        double vtheta_encoder = (v_right - v_left) / wheel_separation_;
 
-    yaw_ += dtheta;
-    x_ += dx * std::cos(yaw_);
-    y_ += dx * std::sin(yaw_);
+        // 3. Sensor Fusion: Kết hợp Gyro và Encoder
+        // alpha = 0.8: Tin tưởng Gyro 80% (vì Gyro nhạy hơn khi quay)
+        const double alpha = 0.8;
+        vtheta_fused = alpha * gyro_z + (1.0 - alpha) * vtheta_encoder;
+    }
 
-    // Normalize yaw to [-pi, pi]
+    // ========== 3. INTEGRATION (Tích phân vị trí) ==========
+    double d_yaw = vtheta_fused * dt;
+    double dx = vx * std::cos(yaw_) * dt; // Simple Euler integration
+    double dy = vx * std::sin(yaw_) * dt;
+
+    yaw_ += d_yaw;
+    x_ += dx;
+    y_ += dy;
+
+    // Normalize Yaw [-PI, PI]
     while (yaw_ > M_PI) yaw_ -= 2.0 * M_PI;
     while (yaw_ < -M_PI) yaw_ += 2.0 * M_PI;
 
-    // ========== PUBLISH ODOMETRY ==========
-    nav_msgs::msg::Odometry odom;
-    odom.header.stamp = now;
-    odom.header.frame_id = odom_frame_;
-    odom.child_frame_id = base_frame_;
+    // ========== 4. PUBLISH ==========
+    
+    // Chỉ publish theo tần số định sẵn (ví dụ 50Hz)
+    if ((now - last_pub_time_) >= odom_publish_period_) {
+        
+        // --- A. Publish Odometry ---
+        nav_msgs::msg::Odometry odom;
+        odom.header.stamp = now;
+        odom.header.frame_id = odom_frame_;
+        odom.child_frame_id = base_frame_;
 
-    odom.pose.pose.position.x = x_;
-    odom.pose.pose.position.y = y_;
-    odom.pose.pose.position.z = 0.0;
+        // Pose
+        odom.pose.pose.position.x = x_;
+        odom.pose.pose.position.y = y_;
+        odom.pose.pose.position.z = 0.0;
+        
+        tf2::Quaternion q;
+        q.setRPY(0, 0, yaw_);
+        odom.pose.pose.orientation.x = q.x();
+        odom.pose.pose.orientation.y = q.y();
+        odom.pose.pose.orientation.z = q.z();
+        odom.pose.pose.orientation.w = q.w();
 
-    // Use fused yaw from encoder + gyro_z
-    tf2::Quaternion q;
-    q.setRPY(0, 0, yaw_);
-    odom.pose.pose.orientation.x = q.x();
-    odom.pose.pose.orientation.y = q.y();
-    odom.pose.pose.orientation.z = q.z();
-    odom.pose.pose.orientation.w = q.w();
+        // Twist (Velocity)
+        odom.twist.twist.linear.x = vx;
+        odom.twist.twist.angular.z = vtheta_fused;
 
-    odom.twist.twist.linear.x = vx;
-    odom.twist.twist.angular.z = vtheta_fused;
+        // Covariance (Cần thiết cho EKF)
+        // Pose covariance
+        odom.pose.covariance[0] = 0.001; // x
+        odom.pose.covariance[7] = 0.001; // y
+        odom.pose.covariance[35] = 0.001; // yaw
+        // Twist covariance
+        odom.twist.covariance[0] = 0.001; // vx
+        odom.twist.covariance[35] = 0.001; // vyaw
 
-    // Covariance (conservative for STM32 hardware)
-    for (int i = 0; i < 36; ++i) { 
-      odom.pose.covariance[i] = 0.0; 
-      odom.twist.covariance[i] = 0.0; 
-    }
-    odom.pose.covariance[0] = 1e-3;   // x
-    odom.pose.covariance[7] = 1e-3;   // y
-    odom.pose.covariance[35] = 5e-3;  // yaw (slightly higher - fused with gyro)
-    odom.twist.covariance[0] = 1e-3;  // vx
-    odom.twist.covariance[35] = 1e-3; // vyaw
+        odom_pub_->publish(odom);
 
-    // ========== PUBLISH IMU MESSAGE ==========
-    // Republish IMU data for EKF fusion (orientation = integrated yaw from above)
-    sensor_msgs::msg::Imu imu_msg;
-    imu_msg.header.stamp = now;
-    imu_msg.header.frame_id = "imu_link";
+        // --- B. Publish TF (Odom -> Base) ---
+        // EKF sẽ publish map->odom, node này publish odom->base
+        geometry_msgs::msg::TransformStamped tf_msg;
+        tf_msg.header.stamp = now;
+        tf_msg.header.frame_id = odom_frame_;
+        tf_msg.child_frame_id = base_frame_;
+        
+        tf_msg.transform.translation.x = x_;
+        tf_msg.transform.translation.y = y_;
+        tf_msg.transform.translation.z = 0.0;
+        tf_msg.transform.rotation = odom.pose.pose.orientation;
+        
+        tf_broadcaster_->sendTransform(tf_msg);
 
-    // Orientation: use fused yaw (roll=pitch=0 for differential drive)
-    imu_msg.orientation = odom.pose.pose.orientation;
+        // --- C. Publish IMU (For EKF) ---
+        sensor_msgs::msg::Imu imu_msg;
+        imu_msg.header.stamp = now;
+        imu_msg.header.frame_id = "imu_link"; // Đảm bảo trùng với URDF
 
-    // Angular velocity (raw gyro data)
-    imu_msg.angular_velocity.x = gyro_x;
-    imu_msg.angular_velocity.y = gyro_y;
-    imu_msg.angular_velocity.z = gyro_z;
+        // Orientation (Lấy từ Odometry đã tính toán)
+        imu_msg.orientation = odom.pose.pose.orientation;
+        
+        // Angular Velocity (Raw Gyro)
+        imu_msg.angular_velocity.x = gyro_x;
+        imu_msg.angular_velocity.y = gyro_y;
+        imu_msg.angular_velocity.z = gyro_z;
 
-    // Linear acceleration
-    imu_msg.linear_acceleration.x = acc_x;
-    imu_msg.linear_acceleration.y = acc_y;
-    imu_msg.linear_acceleration.z = acc_z;
+        // Linear Acceleration (Raw Accel)
+        imu_msg.linear_acceleration.x = acc_x;
+        imu_msg.linear_acceleration.y = acc_y;
+        imu_msg.linear_acceleration.z = acc_z;
+        
+        // Covariance
+        imu_msg.orientation_covariance[8] = 0.001;
+        imu_msg.angular_velocity_covariance[8] = 0.001;
+        imu_msg.linear_acceleration_covariance[0] = 0.01;
 
-    // Covariance (trust gyro_z for yaw, accel less reliable)
-    for (int i = 0; i < 9; ++i) {
-      imu_msg.orientation_covariance[i] = 0.0;
-      imu_msg.angular_velocity_covariance[i] = 0.0;
-      imu_msg.linear_acceleration_covariance[i] = 0.0;
-    }
-    imu_msg.orientation_covariance[8] = 0.01;  // yaw variance
-    imu_msg.angular_velocity_covariance[8] = 0.001;  // gyro_z variance
-    imu_msg.linear_acceleration_covariance[0] = 0.1;  // acc_x
-    imu_msg.linear_acceleration_covariance[4] = 0.1;  // acc_y
-    imu_msg.linear_acceleration_covariance[8] = 0.1;  // acc_z
+        imu_pub_->publish(imu_msg);
 
-    // Throttle output to fixed rate (50Hz) regardless of STM32 input rate (57-111Hz variable)
-    rclcpp::Duration since_last_pub = now - last_pub_time_;
-    if (since_last_pub >= odom_publish_period_) {
-      odom_pub_->publish(odom);
-      imu_pub_->publish(imu_msg);
-      // Advance by exact period to maintain stable rate (avoid drift)
-      last_pub_time_ += odom_publish_period_;
-      
-      // If we're too far behind (>2 periods), resync to avoid burst publishing
-      if ((now - last_pub_time_).seconds() > 2.0 * odom_publish_period_.seconds()) {
         last_pub_time_ = now;
-      }
     }
 
-    // Update last integration time (always update for accurate dt calculation)
     last_time_ = now;
   }
 
-  // parameters/state
-  double wheel_radius_{0.05};
-  double wheel_separation_{0.46};
-
-  double x_{0.0}, y_{0.0}, yaw_{0.0};
-  double last_gyro_z_{0.0};  // For gyro smoothing
+  // Variables
+  double wheel_radius_;
+  double wheel_separation_;
+  double x_, y_, yaw_;
+  
   rclcpp::Time last_time_;
   rclcpp::Time last_pub_time_;
   rclcpp::Duration odom_publish_period_{rclcpp::Duration::from_seconds(0.0)};
 
-  std::string odom_frame_{"odom"};
-  std::string base_frame_{"base_footprint"};
+  std::string odom_frame_, base_frame_;
 
   rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr sensor_sub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;

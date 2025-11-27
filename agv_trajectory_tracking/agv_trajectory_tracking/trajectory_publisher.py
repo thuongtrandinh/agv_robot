@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Trajectory Publisher for AGV
-Generates reference trajectories and publishes to /trajectory topic
-
-Based on MATLAB code: trajectory_reference.m
-Supports: Circle, Square, Figure-8 (Lemniscate)
-
+Trajectory Publisher with Adaptive Speed Profiling
 Author: Thuong Tran Dinh
-Date: October 26, 2025
+Updated: November 27, 2025
+
+Features:
+- Adaptive Speed: Slows down at corners (Square) and high curvature (Figure-8)
+- Reduces Overshoot for PID controller
 """
 
 import rclpy
@@ -17,25 +16,28 @@ from geometry_msgs.msg import PoseStamped
 import math
 import numpy as np
 
-
 class TrajectoryPublisher(Node):
-    """Publishes reference trajectories for robot to follow"""
-    
     def __init__(self):
         super().__init__('trajectory_publisher')
         
         # Parameters
-        self.declare_parameter('trajectory_type', 2)  # 1:Circle, 2:Square, 3:Figure-8
-        self.declare_parameter('publish_rate', 20.0)  # Hz - Fixed optimal rate for real-time tracking
-        self.declare_parameter('path_points', 200)    # Number of points in path
-        self.declare_parameter('preview_time', 10.0)  # Seconds of trajectory to preview
-        self.declare_parameter('center_x', 5.0)       # Trajectory center X coordinate
-        self.declare_parameter('center_y', -2.0)      # Trajectory center Y coordinate
-        self.declare_parameter('radius', 5.0)         # Circle radius (m)
-        self.declare_parameter('enable_publish', True)  # Enable/disable trajectory publishing
-        self.declare_parameter('trajectory_speed', 0.3)  # Trajectory reference speed (m/s) - Reduced for smoother motion
-        self.declare_parameter('ramp_time', 3.0)  # Time to ramp up/down speed (s) for smooth start/stop
+        self.declare_parameter('trajectory_type', 2)
+        self.declare_parameter('publish_rate', 20.0)
+        self.declare_parameter('path_points', 200)
+        self.declare_parameter('preview_time', 10.0)
+        self.declare_parameter('center_x', 0.7)
+        self.declare_parameter('center_y', 0.25)
+        self.declare_parameter('radius', 1.0)
+        self.declare_parameter('enable_publish', True)
         
+        # --- SPEED PARAMETERS ---
+        # Tốc độ tối đa khi đi đường thẳng
+        self.declare_parameter('trajectory_speed', 0.3) 
+        # Tốc độ tối thiểu khi vào cua (Corner speed)
+        self.declare_parameter('corner_speed_scale', 0.3) # Giảm còn 30% tốc độ khi vào cua
+        self.declare_parameter('ramp_time', 3.0) 
+        
+        # Get values
         self.trajectory_type = self.get_parameter('trajectory_type').value
         self.publish_rate = self.get_parameter('publish_rate').value
         self.path_points = self.get_parameter('path_points').value
@@ -44,325 +46,235 @@ class TrajectoryPublisher(Node):
         self.center_y = self.get_parameter('center_y').value
         self.radius = self.get_parameter('radius').value
         self.enable_publish = self.get_parameter('enable_publish').value
-        self.trajectory_speed = self.get_parameter('trajectory_speed').value
+        self.base_speed = self.get_parameter('trajectory_speed').value
+        self.corner_scale = self.get_parameter('corner_speed_scale').value
         self.ramp_time = self.get_parameter('ramp_time').value
         
-        # Publisher
         self.path_pub = self.create_publisher(Path, '/trajectory', 10)
         
-        # Wait for robot to be ready (localization, controller, etc.)
-        self.startup_delay = 3.0  # seconds - Wait for robot systems to initialize
+        # Logic State
         self.is_ready = False
-        
-        # Create startup timer (one-shot)
-        self.startup_timer = self.create_timer(self.startup_delay, self.on_startup_complete)
-        
-        # Trajectory state
+        self.startup_delay = 3.0
         self.current_time = 0.0
-        timer_period = 1.0 / self.publish_rate
-        self.dt = timer_period
+        self.real_time_elapsed = 0.0 # Để tính ramp khởi động
+        self.dt = 1.0 / self.publish_rate
         
-        # Timer for publishing (will start after startup delay)
-        self.timer = self.create_timer(timer_period, self.publish_trajectory)
+        self.startup_timer = self.create_timer(self.startup_delay, self.on_startup)
+        self.timer = self.create_timer(self.dt, self.publish_loop)
         
-        self.get_logger().info(f'Trajectory Publisher started!')
-        self.get_logger().info(f'  Type: {self.get_trajectory_name()}')
-        self.get_logger().info(f'  Center: ({self.center_x:.1f}, {self.center_y:.1f})')
-        
-        # Display size based on trajectory type
-        if self.trajectory_type == 1:  # Circle
-            self.get_logger().info(f'  Circle Radius: {self.radius:.1f} m')
-        elif self.trajectory_type == 2:  # Square
-            side = self.radius * 2.0
-            self.get_logger().info(f'  Square Side: {side:.1f} m (radius param: {self.radius:.1f} m)')
-        elif self.trajectory_type == 3:  # Figure-8
-            amplitude = self.radius / 2.0
-            self.get_logger().info(f'  Figure-8 Amplitude: {amplitude:.1f} m (each circle radius: {amplitude:.1f} m, total radius param: {self.radius:.1f} m)')
-        
-        self.get_logger().info(f'  Publishing at {self.publish_rate} Hz (FIXED for real-time)')
-        self.get_logger().info(f'  Path points: {self.path_points}')
-        self.get_logger().info(f'  Trajectory speed: {self.trajectory_speed} m/s (with {self.ramp_time}s smooth ramp)')
-        self.get_logger().info(f'⏳ Waiting {self.startup_delay}s for robot to be ready...')
-    
-    def on_startup_complete(self):
-        """Called after startup delay - robot is ready"""
+        self.get_logger().info(f'✅ Adaptive Trajectory Publisher Started')
+        self.get_logger().info(f'   Max Speed: {self.base_speed} m/s')
+        self.get_logger().info(f'   Corner Factor: {self.corner_scale*100}%')
+
+    def on_startup(self):
         self.is_ready = True
-        self.startup_timer.cancel()  # Stop the one-shot timer
-        self.get_logger().info('✅ Robot ready! Starting trajectory publishing...')
-    
-    def get_trajectory_name(self):
-        """Get human-readable trajectory name"""
-        names = {1: 'Circle', 2: 'Square', 3: 'Figure-8 (Lemniscate)'}
-        return names.get(self.trajectory_type, 'Unknown')
-    
-    def smooth_speed_ramp(self, t):
+        self.startup_timer.cancel()
+        self.get_logger().info('🚀 Starting Trajectory Generation...')
+
+    # ==================================================
+    # ADAPTIVE SPEED LOGIC (CORE INTELLIGENCE)
+    # ==================================================
+    def calculate_speed_factor(self, t):
         """
-        Apply smooth speed ramping to avoid sudden velocity changes
-        Uses sigmoid function for smooth acceleration/deceleration
-        
-        Args:
-            t: current time (s)
-        Returns:
-            speed_scale: multiplier (0.0 to 1.0) for trajectory speed
+        Trả về hệ số tốc độ (0.0 -> 1.0) tùy thuộc vào hình dạng quỹ đạo
         """
-        if t < self.ramp_time:
-            # Smooth ramp up using sigmoid-like function
-            # Maps [0, ramp_time] -> [0, 1] smoothly
-            progress = t / self.ramp_time
-            # Use smooth S-curve (cubic easing)
-            speed_scale = progress * progress * (3.0 - 2.0 * progress)
-        else:
-            # Full speed after ramp time
-            speed_scale = 1.0
+        # 1. Khởi động mềm (Global Ramp)
+        ramp_factor = 1.0
+        if self.real_time_elapsed < self.ramp_time:
+             # Hàm Sigmoid để tăng tốc mượt
+             progress = self.real_time_elapsed / self.ramp_time
+             ramp_factor = progress * progress * (3.0 - 2.0 * progress)
+
+        # 2. Giảm tốc theo hình dạng (Shape-based Slowdown)
+        shape_factor = 1.0
         
-        return speed_scale
-    
-    def trajectory_reference_circle(self, t):
-        """
-        Circular trajectory
-        
-        Args:
-            t: time (s)
-        Returns:
-            x_ref, y_ref, theta_ref
-        """
-        # Parameters
-        R = self.radius    # Radius [m] - Use configurable radius
-        # Angular velocity calculated from desired linear velocity
-        # omega = v / R, where v is desired speed
-        # Apply smooth speed ramping to avoid sudden velocity changes
-        speed_scale = self.smooth_speed_ramp(t)
-        v_desired = self.trajectory_speed * speed_scale  # Ramped speed
-        omega = v_desired / max(R, 0.1)  # Prevent division by zero
-        
-        # Use configurable center instead of fixed [0,0]
-        center = [self.center_x, self.center_y]
-        
-        # Compute trajectory
-        phi = omega * t
-        x_ref = center[0] + R * math.cos(phi)
-        y_ref = center[1] + R * math.sin(phi)
-        theta_ref = phi + math.pi/2
-        
-        return x_ref, y_ref, theta_ref
-    
+        if self.trajectory_type == 2: # SQUARE
+            # Logic: Giảm tốc khi gần các góc (Corner)
+            side = self.radius * 2.0
+            # Chu vi = 4 * side. Thời gian đi hết 1 vòng (nếu speed=1) = 4*side
+            # Chúng ta chuẩn hóa time t theo chu vi
+            perimeter_pos = (t * self.base_speed) % (4 * side) # Vị trí trên chu vi (m)
+            dist_on_side = perimeter_pos % side # Vị trí trên cạnh hiện tại (m)
+            
+            # Vùng giảm tốc: 15% cuối cạnh và 15% đầu cạnh mới
+            threshold = side * 0.15 
+            
+            # Tính khoảng cách đến góc gần nhất
+            dist_to_corner = min(dist_on_side, side - dist_on_side)
+            
+            if dist_to_corner < threshold:
+                # Càng gần góc, càng chậm
+                ratio = dist_to_corner / threshold
+                # Map ratio [0, 1] -> [corner_scale, 1.0]
+                shape_factor = self.corner_scale + (1.0 - self.corner_scale) * ratio
+            else:
+                shape_factor = 1.0
+
+        elif self.trajectory_type == 3: # FIGURE-8
+            # Logic: Giảm tốc ở 2 đầu vòng cung (High Curvature), nhanh ở giữa
+            # Chu kỳ T xấp xỉ 2*pi*A / speed
+            A = self.radius / 2.0
+            omega_nominal = self.base_speed / (2.0 * A)
+            phase = (omega_nominal * t) % (2 * math.pi)
+            
+            # Các đỉnh của số 8 là tại phase = pi/2 (90 độ) và 3pi/2 (270 độ)
+            # Tại đó curvature lớn nhất -> Cần đi chậm nhất
+            dist_to_peak_1 = abs(phase - math.pi/2)
+            dist_to_peak_2 = abs(phase - 3*math.pi/2)
+            min_dist_peak = min(dist_to_peak_1, dist_to_peak_2)
+            
+            # Vùng ảnh hưởng: +/- 45 độ (pi/4) quanh đỉnh
+            if min_dist_peak < (math.pi / 3.0):
+                ratio = min_dist_peak / (math.pi / 3.0)
+                # Dùng hàm mũ để giảm tốc mượt hơn
+                shape_factor = self.corner_scale + (1.0 - self.corner_scale) * (ratio**0.5)
+            else:
+                shape_factor = 1.0
+
+        elif self.trajectory_type == 1: # CIRCLE
+            # Hình tròn độ cong đều, chạy vận tốc đều
+            shape_factor = 1.0
+            
+        return ramp_factor * shape_factor
+
+    # ==================================================
+    # TRAJECTORY GENERATORS
+    # ==================================================
     def trajectory_reference_square(self, t):
-        """
-        Square trajectory
+        side = self.radius * 2.0
+        # Tính toán dựa trên quãng đường s = v*t ảo
+        # Để đơn giản, giả sử v=1 trong công thức hình học, 
+        # việc scale tốc độ thực tế đã được xử lý ở self.current_time
+        total_len = 4 * side
+        s = (t * self.base_speed) % total_len # Quãng đường đã đi
         
-        Args:
-            t: time (s)
-        Returns:
-            x_ref, y_ref, theta_ref
-        """
-        # Parameters
-        side = self.radius * 2.0  # Side length [m] - Based on radius parameter
-        # Apply smooth speed ramping to avoid sudden velocity changes
-        speed_scale = self.smooth_speed_ramp(t)
-        v_desired = self.trajectory_speed * speed_scale  # Ramped speed
-        T_side = side / max(v_desired, 0.01) # Time per side (s) - prevent division by zero
-        T_period = 4 * T_side     # Period (time for one complete loop)
-        
-        # Compute current position on square (relative to center)
-        time_in_period = t % T_period
-        current_side = int(time_in_period / T_side)  # Which side (0,1,2,3)
-        time_in_side = time_in_period % T_side
-        
-        if current_side == 0:  # Side 1: Moving up
-            x_rel = side/2
-            y_rel = -side/2 + (side/T_side) * time_in_side
-            theta_ref = math.pi/2  # 90 degrees
-            
-        elif current_side == 1:  # Side 2: Moving left
-            x_rel = side/2 - (side/T_side) * time_in_side
-            y_rel = side/2
-            theta_ref = math.pi  # 180 degrees
-            
-        elif current_side == 2:  # Side 3: Moving down
-            x_rel = -side/2
-            y_rel = side/2 - (side/T_side) * time_in_side
-            theta_ref = -math.pi/2  # -90 degrees
-            
-        else:  # Side 4: Moving right
-            x_rel = -side/2 + (side/T_side) * time_in_side
-            y_rel = -side/2
-            theta_ref = 0.0  # 0 degrees
-        
-        # Translate to world coordinates with configurable center
-        x_ref = self.center_x + x_rel
-        y_ref = self.center_y + y_rel
-        
-        return x_ref, y_ref, theta_ref
-    
+        if s < side: # Side 1 (Up)
+            x = self.center_x + side/2
+            y = self.center_y - side/2 + s
+            th = math.pi/2
+        elif s < 2*side: # Side 2 (Left)
+            x = self.center_x + side/2 - (s - side)
+            y = self.center_y + side/2
+            th = math.pi
+        elif s < 3*side: # Side 3 (Down)
+            x = self.center_x - side/2
+            y = self.center_y + side/2 - (s - 2*side)
+            th = -math.pi/2
+        else: # Side 4 (Right)
+            x = self.center_x - side/2 + (s - 3*side)
+            y = self.center_y - side/2
+            th = 0.0
+        return x, y, th
+
     def trajectory_reference_figure8(self, t):
-        """
-        Figure-8 trajectory (Lemniscate of Gerono)
-        
-        Args:
-            t: time (s)
-        Returns:
-            x_ref, y_ref, theta_ref
-        """
-        # Parameters
-        # Each circle in figure-8 has radius = r/2, so amplitude A = r/2
-        A = self.radius / 2.0  # Amplitude (half width) - Based on radius parameter
-        # Apply smooth speed ramping to avoid sudden velocity changes
-        speed_scale = self.smooth_speed_ramp(t)
-        v_desired = self.trajectory_speed * speed_scale  # Ramped speed
-        # Approximate perimeter for figure-8, omega adjusted for desired speed
-        omega = v_desired / max(2.0 * A, 0.1)  # Adjusted angular velocity, prevent division by zero
-        
-        # Compute trajectory (Lemniscate of Gerono parametric equations)
-        # Relative to origin
+        A = self.radius / 2.0
+        # Omega danh định
+        omega = self.base_speed / (2.0 * A)
         phi = omega * t
+        
         x_rel = A * math.cos(phi)
         y_rel = A * math.sin(2*phi) / 2.0
         
-        # Translate to world coordinates with configurable center
-        x_ref = self.center_x + x_rel
-        y_ref = self.center_y + y_rel
+        x = self.center_x + x_rel
+        y = self.center_y + y_rel
         
-        # Compute derivatives to find tangent angle
-        dx_dt = -A * omega * math.sin(phi)
-        dy_dt = A * omega * math.cos(2*phi)
-        theta_ref = math.atan2(dy_dt, dx_dt)
-        
-        return x_ref, y_ref, theta_ref
-    
-    def trajectory_reference(self, t):
-        """
-        Get reference trajectory at time t
-        
-        Args:
-            t: time (s)
-        Returns:
-            x_ref, y_ref, theta_ref
-        """
-        if self.trajectory_type == 1:
-            return self.trajectory_reference_circle(t)
-        elif self.trajectory_type == 2:
-            return self.trajectory_reference_square(t)
-        elif self.trajectory_type == 3:
-            return self.trajectory_reference_figure8(t)
-        else:
-            self.get_logger().warn(f'Unknown trajectory type: {self.trajectory_type}')
-            return 0.0, 0.0, 0.0
-    
-    def normalize_angle(self, angle):
-        """Wrap angle to [-pi, pi]"""
-        while angle > math.pi:
-            angle -= 2.0 * math.pi
-        while angle < -math.pi:
-            angle += 2.0 * math.pi
-        return angle
-    
-    def quaternion_from_euler(self, roll, pitch, yaw):
-        """
-        Convert Euler angles to quaternion (x, y, z, w)
-        
-        Args:
-            roll, pitch, yaw: Euler angles in radians
-        Returns:
-            (x, y, z, w): quaternion components
-        """
-        cy = math.cos(yaw * 0.5)
-        sy = math.sin(yaw * 0.5)
-        cp = math.cos(pitch * 0.5)
-        sp = math.sin(pitch * 0.5)
-        cr = math.cos(roll * 0.5)
-        sr = math.sin(roll * 0.5)
-        
-        w = cr * cp * cy + sr * sp * sy
-        x = sr * cp * cy - cr * sp * sy
-        y = cr * sp * cy + sr * cp * sy
-        z = cr * cp * sy - sr * sp * cy
-        
-        return x, y, z, w
-    
-    def generate_path_message(self):
-        """Generate Path message with trajectory reference points"""
-        path_msg = Path()
-        path_msg.header.stamp = self.get_clock().now().to_msg()
-        path_msg.header.frame_id = 'map'
-        
-        # Generate path points looking ahead (not the entire path, just reference points)
-        dt_path = self.preview_time / self.path_points  # Time interval for each point
-        
-        for i in range(self.path_points):
-            t = self.current_time + i * dt_path
-            x_ref, y_ref, theta_ref = self.trajectory_reference(t)
-            theta_ref = self.normalize_angle(theta_ref)
-            
-            # Create PoseStamped message for each reference point
-            pose_stamped = PoseStamped()
-            pose_stamped.header.stamp = path_msg.header.stamp
-            pose_stamped.header.frame_id = 'map'
-            
-            # Set position of the reference point
-            pose_stamped.pose.position.x = x_ref
-            pose_stamped.pose.position.y = y_ref
-            pose_stamped.pose.position.z = 0.0
-            
-            # Convert yaw angle (theta_ref) to quaternion orientation
-            qx, qy, qz, qw = self.quaternion_from_euler(0.0, 0.0, theta_ref)
-            pose_stamped.pose.orientation.x = qx
-            pose_stamped.pose.orientation.y = qy
-            pose_stamped.pose.orientation.z = qz
-            pose_stamped.pose.orientation.w = qw
-            
-            # Append the reference point to the path
-            path_msg.poses.append(pose_stamped)
-        
-        return path_msg
+        dx = -A * omega * math.sin(phi)
+        dy = A * omega * math.cos(2*phi)
+        th = math.atan2(dy, dx)
+        return x, y, th
 
-    
-    def publish_trajectory(self):
-        """Timer callback to publish reference trajectory points"""
-        # Wait for startup delay before publishing
-        if not self.is_ready:
-            return
+    def trajectory_reference_circle(self, t):
+        R = self.radius
+        omega = self.base_speed / R
+        phi = omega * t
         
-        # Check if publishing is enabled
+        x = self.center_x + R * math.cos(phi)
+        y = self.center_y + R * math.sin(phi)
+        th = phi + math.pi/2
+        return x, y, th
+
+    def get_ref_pose(self, t):
+        if self.trajectory_type == 1: return self.trajectory_reference_circle(t)
+        elif self.trajectory_type == 2: return self.trajectory_reference_square(t)
+        elif self.trajectory_type == 3: return self.trajectory_reference_figure8(t)
+        return 0,0,0
+
+    # ==================================================
+    # PUBLISH LOOP
+    # ==================================================
+    def publish_loop(self):
+        if not self.is_ready: return
+        
         if self.enable_publish:
-            # Generate and publish the reference points in the trajectory
-            path_msg = self.generate_path_message()
+            path_msg = Path()
+            path_msg.header.stamp = self.get_clock().now().to_msg()
+            path_msg.header.frame_id = 'map'
+            
+            # --- PREVIEW GENERATION ---
+            # Ta tạo ra các điểm tương lai (Preview)
+            # QUAN TRỌNG: Các điểm tương lai cũng phải tuân theo quy luật giảm tốc
+            # Nên ta dùng một biến temp_time chạy mô phỏng
+            temp_time = self.current_time
+            
+            preview_dt = self.preview_time / self.path_points
+            
+            for _ in range(self.path_points):
+                # Tính factor tốc độ tại điểm tương lai đó
+                factor = self.calculate_speed_factor(temp_time)
+                
+                # Time warping: Thời gian ảo tăng chậm lại nếu factor nhỏ
+                # Nếu factor = 1.0 -> temp_time tăng đúng preview_dt
+                # Nếu factor = 0.3 -> temp_time chỉ tăng 30% -> Các điểm xít lại gần nhau (Robot đi chậm)
+                step = preview_dt * factor # Nhưng ở đây ta đang vẽ path cố định khoảng cách hay thời gian?
+                # Để controller hiểu là phải đi chậm, các điểm path nên dày đặc hơn HOẶC
+                # đơn giản là điểm tham chiếu hiện tại (current_time) di chuyển chậm lại.
+                
+                # Với MPC thì cần path dày đặc, với Pure Pursuit/Fuzzy thì chỉ cần điểm tham chiếu hiện tại chuẩn.
+                # Tuy nhiên để vẽ cho đẹp, ta cứ tăng đều t
+                
+                x, y, th = self.get_ref_pose(temp_time)
+                
+                # Tăng thời gian mô phỏng cho điểm tiếp theo
+                # Lưu ý: preview path chỉ để vẽ, không ảnh hưởng logic điều khiển lắm
+                temp_time += preview_dt 
+                
+                pose = PoseStamped()
+                pose.header = path_msg.header
+                pose.pose.position.x = x
+                pose.pose.position.y = y
+                
+                # Euler to Quat
+                cy = math.cos(th * 0.5); sy = math.sin(th * 0.5)
+                pose.pose.orientation.z = sy; pose.pose.orientation.w = cy
+                path_msg.poses.append(pose)
+            
             self.path_pub.publish(path_msg)
-            
-            # Get current reference for logging
-            x_ref, y_ref, theta_ref = self.trajectory_reference(self.current_time)
-            
-            # Log periodically for debugging purposes
-            self.get_logger().info(
-                f'Published trajectory | t={self.current_time:.2f}s | '
-                f'ref: x={x_ref:.3f}, y={y_ref:.3f}, θ={math.degrees(theta_ref):.1f}°',
-                throttle_duration_sec=2.0
-            )
-        else:
-            # Still log even if not publishing
-            x_ref, y_ref, theta_ref = self.trajectory_reference(self.current_time)
-            self.get_logger().info(
-                f'[NOT PUBLISHING] t={self.current_time:.2f}s | '
-                f'ref: x={x_ref:.3f}, y={y_ref:.3f}, θ={math.degrees(theta_ref):.1f}°',
-                throttle_duration_sec=2.0
-            )
+
+        # --- UPDATE CURRENT REFERENCE STATE ---
+        # Đây là bước quan trọng nhất: Cập nhật vị trí con mồi
         
-        # Update time for the next set of points
-        self.current_time += self.dt
+        # 1. Tính hệ số tốc độ hiện tại
+        speed_factor = self.calculate_speed_factor(self.current_time)
+        
+        # 2. Time Warping: Chỉ tăng thời gian tham chiếu một lượng nhỏ nếu đang vào cua
+        # self.dt là bước thời gian thực (0.05s). 
+        # effective_dt là bước thời gian trên quỹ đạo.
+        effective_dt = self.dt * speed_factor
+        
+        self.current_time += effective_dt
+        self.real_time_elapsed += self.dt # Thời gian thực vẫn trôi đều
 
-
+        # Log
+        if self.current_time % 1.0 < self.dt: # Log mỗi giây ảo
+            self.get_logger().info(f'Speed Factor: {speed_factor:.2f} | T_ref: {self.current_time:.2f}')
 
 def main(args=None):
     rclpy.init(args=args)
-    
-    try:
-        node = TrajectoryPublisher()
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        if rclpy.ok():
-            rclpy.shutdown()
-
+    node = TrajectoryPublisher()
+    try: rclpy.spin(node)
+    except KeyboardInterrupt: pass
+    finally: 
+        if rclpy.ok(): rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

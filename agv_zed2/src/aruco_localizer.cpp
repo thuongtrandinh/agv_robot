@@ -30,7 +30,7 @@ class ArucoLocalizerNode : public rclcpp::Node
 {
 public:
   ArucoLocalizerNode()
-  : Node("aruco_localizer_node")
+  : Node("aruco_localizer")
   {
     // === Parameters ===
     // Frame của bản đồ (Global)
@@ -177,7 +177,7 @@ private:
     
     // Chỉ lấy Yaw cho Robot, bỏ qua Roll/Pitch nếu xe chạy trong nhà
     double roll, pitch, yaw;
-    T_map_base.getRotation().getRPY(roll, pitch, yaw);
+    tf2::Matrix3x3(T_map_base.getRotation()).getRPY(roll, pitch, yaw);
     tf2::Quaternion q_final;
     q_final.setRPY(0, 0, yaw); // Ép về 2D mode
     out.pose.pose.orientation = tf2::toMsg(q_final);

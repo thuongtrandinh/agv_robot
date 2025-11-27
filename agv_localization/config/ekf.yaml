@@ -1,118 +1,57 @@
 ekf_filter_node:
     ros__parameters:
-      # Use simulation time from Gazebo
       use_sim_time: true
       
-      # The frequency, in Hz, at which the filter will output a position estimate. Note that the filter will not begin
-      # computation until it receives at least one message from one of the inputs. It will then run continuously at the
-      # frequency specified here, regardless of whether it receives more measurements. Defaults to 30 if unspecified.
-      # HIGH FREQUENCY: Match stm32_odom throttled output (50Hz) for smooth real-time tracking
-      frequency: 50.0
+      # Tần số: Giữ 15.0 hoặc tăng nhẹ lên 20.0 nếu đã tắt Plotter
+      frequency: 30.0
+      
+      # QUAN TRỌNG: Thời gian chờ tối đa cho sensor.
+      # 0.1s = 100ms. Nếu sensor im lặng quá 100ms, EKF sẽ tự predict tiếp mà không chờ.
+      sensor_timeout: 0.1
 
-      # ekf_localization_node and ukf_localization_node both use a 3D omnidirectional motion model. If this parameter is
-      # set to true, no 3D information will be used in your state estimate. Use this if you are operating in a planar
-      # environment and want to ignore the effect of small variations in the ground plane that might otherwise be detected
-      # by, for example, an IMU. Defaults to false if unspecified.
       two_d_mode: true
-
-      # Whether to broadcast the transformation over the /tf topic. Defaults to true if unspecified.
-      # IMPORTANT: Set to TRUE - EKF must publish odom→base_footprint with fused IMU+Encoder data
-      # diff_drive_controller's enable_odom_tf should be FALSE to avoid conflict
       publish_tf: true
 
-      # ============================================
-      # FRAME CONFIGURATION (Standard Pipeline)
-      # ============================================
-      # This EKF fuses IMU + Encoder (continuous sensors)
-      # Pipeline: [Encoder + IMU] → EKF → /odometry/filtered → AMCL → map
-      # TF Tree: map → odom → base_footprint
-      #
-      # KEY: world_frame = odom (NOT map!)
-      # - EKF operates in odom frame (local, continuous)
-      # - EKF publishes odom → base_footprint transform
-      # - AMCL subscribes /odometry/filtered and publishes map → odom transform
-      
       map_frame: map
       odom_frame: odom
       base_link_frame: base_footprint
-      world_frame: odom  # CRITICAL: odom frame for continuous sensor fusion!
+      world_frame: odom
 
-      
       # ============================================
-      # SENSOR INPUTS
+      # SENSOR INPUTS (FIXED QUEUE SIZE)
       # ============================================
-      # Input 1: IMU - Orientation and angular velocity from Gazebo IMU
-      # Input 2: Wheel Encoder Odometry - Velocities from differential drive controller
       
-      # IMU Configuration - Use IMU with covariance added by imu_republisher
+      # IMU
       imu0: /imu_with_covariance
-      # Each sensor reading updates some or all of the filter's state. These options give you greater control over which
-      # values from each measurement are fed to the filter. For example, if you have an odometry message as input, but only
-      # want to use its Z position value, then set the entire vector to false, except for the third entry. The order of the
-      # values is x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az. Note that not some message types
-      # do not provide some of the state variables estimated by the filter. For example, a TwistWithCovarianceStamped message
-      # has no pose information, so the first six values would be meaningless in that case. Each vector defaults to all false
-      # if unspecified, effectively making this parameter required for each sensor.
-      # OPTIMIZED: Use IMU angular velocity (vyaw) and acceleration (ax)
-      # IMU provides high-frequency angular velocity to smooth encoder-based yaw
-      # Do NOT use absolute IMU yaw to avoid drift during reverse motion
       imu0_config: [false, false, false,
                     false, false, false,
                     false, false, false,
                     false, false, true,
                     true,  false, false]
-
-      # Enable differential mode: IMU angular velocity corrects encoder yaw rate
-      # This helps compensate for wheel slip while avoiding absolute yaw drift
       imu0_differential: true
       imu0_pose_use_child_frame: false
       imu0_remove_gravitational_acceleration: true
-      
-      # Override zero covariance from Gazebo IMU
       imu0_relative: false
-      imu0_queue_size: 2
+      
+      # GIẢM QUEUE SIZE: Giảm trễ do xếp hàng
+      imu0_queue_size: 2 
 
-      # The filter accepts an arbitrary number of inputs from each input message type (nav_msgs/Odometry,
-      # geometry_msgs/PoseWithCovarianceStamped, geometry_msgs/TwistWithCovarianceStamped,
-      # sensor_msgs/Imu). To add an input, simply append the next number in the sequence to its "base" name, e.g., odom0,
-      # odom1, twist0, twist1, imu0, imu1, imu2, etc. The value should be the topic name. These parameters obviously have no
-      # default values, and must be specified.
-      odom0: /diff_cont/odom  # Use odometry with covariance added by odom_republisher
-
-      # Use position (x,y,yaw) AND velocities from encoder for best accuracy
-      # ADDED: yaw from odometry to replace drifting IMU yaw
-      # Position helps prevent drift accumulation
-      # Order: x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az
-      odom0_config: [false,  false,  false,
-                     false, false, true,
+      # Odom (Encoder)
+      odom0: /diff_cont/odom
+      # Chỉ lấy vận tốc (vx, vy, vyaw) - Giúp phản ứng nhanh hơn
+      odom0_config: [false, false, false,
+                     false, false, false,
                      true,  false, false,
                      false, false, true,
                      false, false, false]
-
-      # [ADVANCED] When measuring one pose variable with two sensors, a situation can arise in which both sensors under-
-      # report their covariances. This can lead to the filter rapidly jumping back and forth between each measurement as they
-      # arrive. In these cases, it often makes sense to (a) correct the measurement covariances, or (b) if velocity is also
-      # measured by one of the sensors, let one sensor measure pose, and the other velocity. However, doing (a) or (b) isn't
-      # always feasible, and so we expose the differential parameter. When differential mode is enabled, all absolute pose
-      # data is converted to velocity data by differentiating the absolute pose measurements. These velocities are then
-      # integrated as usual. NOTE: this only applies to sensors that provide pose measurements; setting differential to true
-      # for twist measurements has no effect.
-      odom0_differential: false  # We're using velocities directly, no need for differentiation
+      odom0_differential: false
       odom0_pose_use_child_frame: false
       odom0_relative: false
+      
+      # GIẢM QUEUE SIZE
       odom0_queue_size: 2
 
-      # Trust encoder more by reducing assumed measurement noise
-      # Lower values = higher trust in this sensor
-      # Position (x,y,yaw) from encoder is now very reliable
-      odom0_pose_rejection_threshold: 5.0  # Reject only very bad measurements
-      odom0_twist_rejection_threshold: 3.0
-
-      # ArUco Pose Input - ENABLED for absolute position correction
-      # Provides ground truth position when markers are visible
-      # Used to correct cumulative encoder drift periodically
-      # NOTE: This works with EKF because world_frame=odom (local frame)
-      # ArUco pose is transformed to odom frame before fusion
+      # ArUco Pose
       pose0: /aruco/pose_with_covariance
       pose0_config: [true,  true,  false,
                      false, false, true,
@@ -120,45 +59,32 @@ ekf_filter_node:
                      false, false, false,
                      false, false, false]
       pose0_differential: false
+      
+      # ArUco về bản chất là trễ (do xử lý ảnh), nên để queue nhỏ nhất
       pose0_queue_size: 1
-      pose0_nodelay: true
+      pose0_nodelay: true  # Cố gắng xử lý ngay lập tức
 
-      # Moderate trust in ArUco: correct drift but don't override smooth encoder motion
-      # Higher threshold = more tolerant of outliers (markers can have detection errors)
-      pose0_rejection_threshold: 10.0  # Allow larger corrections when needed
+      pose0_rejection_threshold: 10.0
 
-      # [ADVANCED] The process noise covariance matrix can be difficult to tune, and can vary for each application, so it is
-      # exposed as a configuration parameter. This matrix represents the noise we add to the total error after each
-      # prediction step. The better the omnidirectional motion model matches your system, the smaller these values can be.
-      # However, if users find that a given variable is slow to converge, one approach is to increase the
-      # process_noise_covariance diagonal value for the variable in question, which will cause the filter's predicted error
-      # to be larger, which will cause the filter to trust the incoming measurement more during correction. The values are
-      # ordered as x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az. Defaults to the matrix below if
-      # unspecified.
-      # OPTIMIZED FOR MULTI-SENSOR FUSION: Low process noise with high-quality sensors
-      # Encoder + IMU (continuous) + ArUco (periodic absolute corrections)
-      # Lower noise = trust sensor measurements more than motion model predictions
-      process_noise_covariance: [0.0005, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
-                                 0.0,   0.0005, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
-                                 0.0,   0.0,   0.001, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
-                                 0.0,   0.0,   0.0,   0.001, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
-                                 0.0,   0.0,   0.0,   0.0,   0.001, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
-                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.002, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
-                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
-                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
-                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
-                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.005, 0.0,   0.0,   0.0,   0.0,   0.0,
-                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.005, 0.0,   0.0,   0.0,   0.0,
-                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.005, 0.0,   0.0,   0.0,
-                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.005, 0.0,   0.0,
-                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.005, 0.0,
-                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01]
+      # Process Noise: Tăng nhẹ noise của vận tốc để EKF tin vào sensor mới hơn là model cũ
+      # (Giúp hệ thống phản ứng nhanh hơn với thay đổi thực tế)
+      # Hàng 7 (vx), 8 (vy), 9 (vz), 10 (vroll), 11 (vpitch), 12 (vyaw)
+      process_noise_covariance: [0.05, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                 0.0,    0.05, 0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                 0.0,    0.0,    0.06, 0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                 0.0,    0.0,    0.0,    0.03, 0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                 0.0,    0.0,    0.0,    0.0,    0.03, 0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.06, 0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.025, 0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.025, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.04, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.01, 0.0,    0.0,    0.0,    0.0,    0.0,
+                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.01, 0.0,    0.0,    0.0,    0.0,
+                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.02, 0.0,    0.0,    0.0,
+                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.01, 0.0,    0.0,
+                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.01, 0.0,
+                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.015]
 
-      # [ADVANCED] This represents the initial value for the state estimate error covariance matrix. Setting a diagonal
-      # value (variance) to a large value will result in rapid convergence for initial measurements of the variable in
-      # question. Users should take care not to use large values for variables that will not be measured directly. The values
-      # are ordered as x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az. Defaults to the matrix below
-      #if unspecified.
       initial_estimate_covariance: [1e-9,   0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
                                     0.0,    1e-9,   0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
                                     0.0,    0.0,    1e-9,   0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,

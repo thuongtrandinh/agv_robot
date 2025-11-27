@@ -42,8 +42,7 @@ def launch_setup(context, *args, **kwargs):
         output="screen",
         parameters=[
             ekf_config_file,
-            {"use_sim_time": use_sim_time},
-            {"frequency": 15.0}  # Match stm32_odom throttled output (15Hz)
+            {"use_sim_time": use_sim_time}
         ],
     )
     
@@ -60,7 +59,7 @@ def launch_setup(context, *args, **kwargs):
 
     # Delay AMCL activation to ensure transforms are available
     amcl_delayed = TimerAction(
-        period=3.0,  # 3s to ensure LiDAR TF is stable
+        period=5.0,  # 5s to ensure LiDAR TF is stable
         actions=[
             Node(
                 package="nav2_amcl",
@@ -70,10 +69,9 @@ def launch_setup(context, *args, **kwargs):
                 parameters=[
                     amcl_config_file,
                     {"use_sim_time": use_sim_time},
-                    {"transform_tolerance": 1.5},
+                    {"transform_tolerance": 5.0},  # Increased to handle delays
                     {"tf_broadcast": True},
                 ],
-                remappings=[("/scan", "/scan")]  # Use throttled scan
             )
         ]
     )
@@ -82,7 +80,7 @@ def launch_setup(context, *args, **kwargs):
     aruco_localizer = Node(
         package="agv_zed2",
         executable="aruco_localizer",
-        name="aruco_localizer_node",
+        name="aruco_localizer",
         output="screen",
         parameters=[
             {"use_sim_time": use_sim_time},
