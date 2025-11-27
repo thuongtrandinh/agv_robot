@@ -70,7 +70,7 @@ ekf_filter_node:
       
       # Override zero covariance from Gazebo IMU
       imu0_relative: false
-      imu0_queue_size: 10
+      imu0_queue_size: 2
 
       # The filter accepts an arbitrary number of inputs from each input message type (nav_msgs/Odometry,
       # geometry_msgs/PoseWithCovarianceStamped, geometry_msgs/TwistWithCovarianceStamped,
@@ -83,7 +83,7 @@ ekf_filter_node:
       # ADDED: yaw from odometry to replace drifting IMU yaw
       # Position helps prevent drift accumulation
       # Order: x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az
-      odom0_config: [true,  true,  false,
+      odom0_config: [false,  false,  false,
                      false, false, true,
                      true,  false, false,
                      false, false, true,
@@ -100,7 +100,7 @@ ekf_filter_node:
       odom0_differential: false  # We're using velocities directly, no need for differentiation
       odom0_pose_use_child_frame: false
       odom0_relative: false
-      odom0_queue_size: 10
+      odom0_queue_size: 2
 
       # Trust encoder more by reducing assumed measurement noise
       # Lower values = higher trust in this sensor
@@ -120,7 +120,7 @@ ekf_filter_node:
                      false, false, false,
                      false, false, false]
       pose0_differential: false
-      pose0_queue_size: 5
+      pose0_queue_size: 1
       pose0_nodelay: true
 
       # Moderate trust in ArUco: correct drift but don't override smooth encoder motion

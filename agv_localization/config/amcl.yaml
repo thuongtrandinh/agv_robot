@@ -1,33 +1,32 @@
 amcl:
   ros__parameters:
-    # Prefer controlling use_sim_time from the launch file. If you run in simulation
-    # pass use_sim_time=True in the launch; leaving it out here avoids mismatches.
-    # use_sim_time: False
+    use_sim_time: false # Đã được set từ launch file, nhưng cứ để false ở đây cho chắc
 
     # Frames
     global_frame_id: "map"
     odom_frame_id: "odom"
     base_frame_id: "base_footprint"
 
-    # ODOMETRY MODEL - Trust LiDAR more for orientation
-    # Reduced odometry noise → AMCL relies more on scan matching for heading
+    # ODOMETRY MODEL
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
-    alpha1: 0.005  # Reduced - trust LiDAR for rotation
-    alpha2: 0.005  # Reduced - rotation noise from translation
-    alpha3: 0.008  # Translation noise (keep moderate)
-    alpha4: 0.005  # Reduced - translation noise from rotation
-    alpha5: 0.003  # Reduced strafe noise
+    alpha1: 0.02  # Tăng nhẹ để bù trừ sai số quay
+    alpha2: 0.02
+    alpha3: 0.02
+    alpha4: 0.02
+    alpha5: 0.02
 
     # Sensor topics
     scan_topic: /scan
 
-    # Transform & timing - Force continuous updates
+    # Transform & timing
     tf_broadcast: true
-    transform_tolerance: 0.5  # Increased tolerance for hardware timing jitter
-    update_min_a: 0.01  # Update after 0.01 rad (~0.5°) - very frequent
-    update_min_d: 0.01  # Update after 1cm translation - very frequent
+    transform_tolerance: 1.5  # <--- TĂNG LÊN CAO
+    
+    # Update logic (CRITICAL FIX)
+    update_min_a: 0.20  # ~11 độ mới cập nhật 1 lần
+    update_min_d: 0.20  # 20cm mới cập nhật 1 lần
 
-    # Initial pose (floats)
+    # Initial pose
     set_initial_pose: true
     initial_pose:
       x: 0.0
@@ -35,40 +34,36 @@ amcl:
       z: 0.0
       yaw: 0.0
 
-    # Particle filter settings - Aggressive convergence to prevent divergence
-    # Kill bad particles quickly, keep only good matches
-    max_particles: 3000  # More particles for better initial coverage
+    # Particle filter settings
+    max_particles: 2000  # <--- GIẢM TẢI CPU
     min_particles: 500
-    pf_err: 0.01  # Very tight - aggressive convergence
+    pf_err: 0.02
     pf_z: 0.99
-    resample_interval: 2  # Resample more often to kill bad particles
+    resample_interval: 2
 
-    # Laser model - More beams for better orientation accuracy
+    # Laser model
     laser_model_type: "likelihood_field"
-    max_beams: 60  # Doubled - better scan matching for heading
-    laser_max_range: 100.0
-    laser_min_range: 0.0
-    laser_likelihood_max_dist: 1.0  # Tighter - precise matching
+    max_beams: 60
+    laser_max_range: 12.0 # Giới hạn range thực tế của Lidar (ví dụ RPLidar A1 là 12m)
+    laser_min_range: 0.1
+    laser_likelihood_max_dist: 2.0 
 
-    # Laser model weights - Maximum LiDAR trust, kill bad particles
-    # Very high z_hit → particles outside map get killed quickly
-    z_hit: 0.90  # Maximum - only keep particles that match scan
-    z_short: 0.03
-    z_max: 0.02
-    z_rand: 0.05  # Minimal - almost no tolerance for random noise
-    sigma_hit: 0.15  # Very tight - precise scan matching required
+    # Laser model weights (Relaxed)
+    z_hit: 0.80
+    z_short: 0.05
+    z_max: 0.05
+    z_rand: 0.10
+    sigma_hit: 0.2
     lambda_short: 0.1
 
-    # Beam skip (improves performance / ignores inconsistent beams)
+    # Beam skip
     do_beamskip: true
-    beam_skip_distance: 0.3  # More strict about what to skip
-    beam_skip_error_threshold: 0.7  # Lower threshold = skip less
-    beam_skip_threshold: 0.2  # Keep more beams for accuracy
+    beam_skip_distance: 0.5
+    beam_skip_error_threshold: 0.9
+    beam_skip_threshold: 0.3
 
-    # Recovery - Adaptive behavior after convergence
-    # After localization converges, these reduce effective alpha (trust odom more)
-    recovery_alpha_slow: 0.001  # Slow filter to detect convergence
-    recovery_alpha_fast: 0.1    # Fast filter to adapt quickly
+    # Recovery
+    recovery_alpha_slow: 0.001
+    recovery_alpha_fast: 0.1
 
-    # Pose publishing - Synchronized with odometry/filtered frequency
-    save_pose_rate: 10.0  # 10 Hz - conservative rate for reliable synchronization
+    save_pose_rate: 1.0  # Không cần lưu pose quá nhanh, 1Hz là đủ

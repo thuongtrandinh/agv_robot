@@ -22,25 +22,25 @@ def generate_launch_description():
     # Declare arguments
     trajectory_type_arg = DeclareLaunchArgument(
         'trajectory_type',
-        default_value='2',
+        default_value='1',
         description='Trajectory type: 1=Circle, 2=Square, 3=Figure-8'
     )
     
     center_x_arg = DeclareLaunchArgument(
         'center_x',
-        default_value='5.0',
+        default_value='0.7',
         description='X coordinate of trajectory center'
     )
     
     center_y_arg = DeclareLaunchArgument(
         'center_y',
-        default_value='-2.0',
+        default_value='0.25',
         description='Y coordinate of trajectory center'
     )
     
     radius_arg = DeclareLaunchArgument(
         'radius',
-        default_value='5.0',
+        default_value='1.0',
         description='Circle radius for trajectory (meters)'
     )
     
@@ -58,13 +58,13 @@ def generate_launch_description():
     
     trajectory_speed_arg = DeclareLaunchArgument(
         'trajectory_speed',
-        default_value='0.25',  # m/s - Smooth and safe speed with ramping
-        description='Trajectory reference speed (m/s) - Optimal: 0.25'
+        default_value='0.265',  # m/s - Smooth and safe speed with ramping
+        description='Trajectory reference speed (m/s) - Optimal: 0.265'
     )
     
     ramp_time_arg = DeclareLaunchArgument(
         'ramp_time',
-        default_value='3.0',  # seconds - Smooth acceleration time
+        default_value='2.0',  # seconds - Smooth acceleration time
         description='Time to smoothly ramp up/down speed (s) to avoid sudden velocity changes'
     )
     

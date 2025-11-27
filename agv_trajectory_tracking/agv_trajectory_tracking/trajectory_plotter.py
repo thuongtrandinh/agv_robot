@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Real-time Trajectory Plotter with Matplotlib
-Plots reference trajectory, actual trajectory, and tracking error
+Offline Trajectory Plotter
+Collects data during run, plots results when stopped (Ctrl+C).
 
 Author: Thuong Tran Dinh
-Date: November 2, 2025
+Updated: November 2025
 """
 
 import rclpy
@@ -12,34 +12,16 @@ from rclpy.node import Node
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseWithCovarianceStamped
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from matplotlib.patches import Circle
 import numpy as np
 import math
-import threading
-
 
 class TrajectoryPlotter(Node):
-    """Real-time trajectory visualization with matplotlib"""
-    
     def __init__(self):
         super().__init__('trajectory_plotter')
         
         # Parameters
-        self.declare_parameter('max_history', 2000)
-        self.declare_parameter('update_interval', 50)  # ms - Plot update rate (default: 50ms = 20Hz)
-        self.declare_parameter('publish_rate', 10.0)   # Hz - Trajectory publish rate for reference
-        
+        self.declare_parameter('max_history', 10000) # Tăng bộ nhớ lên để lưu toàn bộ quá trình
         self.max_history = self.get_parameter('max_history').value
-        self.update_interval = self.get_parameter('update_interval').value
-        self.publish_rate = self.get_parameter('publish_rate').value
-        
-        # Auto-adjust update interval based on publish rate for real-time plotting
-        # Update at least 2x faster than publish rate for smooth visualization
-        recommended_interval = int(1000.0 / (self.publish_rate * 2))  # ms
-        if self.update_interval > recommended_interval:
-            self.update_interval = recommended_interval
-            self.get_logger().info(f'⚡ Auto-adjusted plot update interval to {self.update_interval}ms for smooth real-time visualization')
         
         # Data storage
         self.ref_x = []
@@ -49,13 +31,9 @@ class TrajectoryPlotter(Node):
         self.time_stamps = []
         self.errors = []
         
-        self.start_time = self.get_clock().now().nanoseconds / 1e9
+        self.start_time = None
         self.last_ref_point = None
         self.last_actual_point = None
-        
-        # Ready flag - ensure subscribers are ready before data arrives
-        self.is_ready = False
-        self.data_received = False
         
         # Subscribers
         self.ref_path_sub = self.create_subscription(
@@ -65,258 +43,146 @@ class TrajectoryPlotter(Node):
         self.pose_sub = self.create_subscription(
             PoseWithCovarianceStamped, '/amcl_pose',
             self.pose_callback, 10)
-        
-        # Setup matplotlib EARLY to be ready for first data
-        self.setup_plots()
-        
-        # Mark as ready after a short delay to ensure ROS2 connections established
-        self.create_timer(0.5, self.mark_ready)
-        
-        self.get_logger().info('📊 Trajectory Plotter started!')
-        self.get_logger().info(f'  Max history: {self.max_history} points')
-        self.get_logger().info(f'  Update interval: {self.update_interval} ms ({1000.0/self.update_interval:.1f} Hz)')
-        self.get_logger().info(f'  Trajectory publish rate: {self.publish_rate} Hz')
-        self.get_logger().info(f'  Real-time plotting: ✓ ENABLED')
-        self.get_logger().info('⏳ Initializing subscribers...')
-    
-    def mark_ready(self):
-        """Mark plotter as ready after initialization"""
-        self.is_ready = True
-        self.get_logger().info('✅ Plotter ready! Waiting for trajectory data...')
-    
-    def setup_plots(self):
-        """Setup matplotlib figure with 2 subplots"""
-        plt.ion()  # Interactive mode
-        self.fig = plt.figure(figsize=(14, 6))
-        
-        # Subplot 1: X-Y trajectory plot
-        self.ax1 = self.fig.add_subplot(1, 2, 1)
-        self.ax1.set_xlabel('X (m)', fontsize=12)
-        self.ax1.set_ylabel('Y (m)', fontsize=12)
-        self.ax1.set_title('Trajectory Tracking', fontsize=14, fontweight='bold')
-        self.ax1.grid(True, alpha=0.3)
-        self.ax1.set_aspect('equal')
-        
-        # Initialize lines
-        self.ref_line, = self.ax1.plot([], [], 'b-', linewidth=2, label='Reference', alpha=0.7)
-        self.actual_line, = self.ax1.plot([], [], 'r-', linewidth=2, label='Actual', alpha=0.8)
-        self.robot_marker, = self.ax1.plot([], [], 'ro', markersize=10, label='Robot')
-        
-        self.ax1.legend(loc='upper right', fontsize=10)
-        
-        # Subplot 2: Tracking error over time
-        self.ax2 = self.fig.add_subplot(1, 2, 2)
-        self.ax2.set_xlabel('Time (s)', fontsize=12)
-        self.ax2.set_ylabel('Tracking Error (m)', fontsize=12)
-        self.ax2.set_title('Tracking Error', fontsize=14, fontweight='bold')
-        self.ax2.grid(True, alpha=0.3)
-        
-        self.error_line, = self.ax2.plot([], [], 'g-', linewidth=2)
-        self.error_mean_line = self.ax2.axhline(y=0, color='orange', linestyle='--', 
-                                                 linewidth=2, label='Mean Error')
-        
-        self.ax2.legend(loc='upper right', fontsize=10)
-        
-        # Add text for statistics
-        self.stats_text = self.fig.text(0.5, 0.02, '', ha='center', fontsize=11,
-                                        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-        
-        plt.tight_layout()
-        plt.subplots_adjust(bottom=0.1)
-    
+            
+        self.get_logger().info('📥 Plotter started in Data Collection Mode.')
+        self.get_logger().info('   (Matplotlib window will open when you stop the launch file)')
+
     def reference_callback(self, msg):
         """Store reference trajectory"""
-        if not self.is_ready:
-            return
-        
-        if not self.data_received:
-            self.data_received = True
-            self.get_logger().info('📍 First trajectory data received! Starting visualization...')
-        
         if len(msg.poses) > 0:
-            # Get first point (closest to robot)
+            # Lấy điểm đầu tiên của path làm điểm tham chiếu hiện tại
             pose = msg.poses[0].pose.position
             point = (pose.x, pose.y)
             
-            # Add if different from last point (avoid duplicates)
+            # Chỉ lưu nếu điểm thay đổi (tránh trùng lặp dữ liệu)
             if self.last_ref_point is None or \
-               self.distance(point, self.last_ref_point) > 0.05:
+               self.distance(point, self.last_ref_point) > 0.01:
                 self.ref_x.append(pose.x)
                 self.ref_y.append(pose.y)
                 self.last_ref_point = point
-                
-                # Limit history
-                if len(self.ref_x) > self.max_history:
-                    self.ref_x.pop(0)
-                    self.ref_y.pop(0)
-    
+
     def pose_callback(self, msg):
         """Store actual robot trajectory and compute error"""
+        if self.start_time is None:
+            self.start_time = self.get_clock().now().nanoseconds / 1e9
+
         x = msg.pose.pose.position.x
         y = msg.pose.pose.position.y
         point = (x, y)
         
-        # Add if different from last point
+        # Lưu dữ liệu thực tế
         if self.last_actual_point is None or \
-           self.distance(point, self.last_actual_point) > 0.05:
+           self.distance(point, self.last_actual_point) > 0.01:
             self.actual_x.append(x)
             self.actual_y.append(y)
             self.last_actual_point = point
             
-            # Limit history
-            if len(self.actual_x) > self.max_history:
-                self.actual_x.pop(0)
-                self.actual_y.pop(0)
-            
-            # 🚀 IMPROVED: Compute CROSS-TRACK ERROR (perpendicular distance to path)
-            # This is more accurate than Euclidean distance to nearest point
-            if len(self.ref_x) > 1:  # Need at least 2 points to compute cross-track
-                cross_track_error = self.compute_cross_track_error(point)
-                
+            # Tính sai số bám (Cross-track Error)
+            if len(self.ref_x) > 1:
+                error = self.compute_cross_track_error(point)
                 current_time = self.get_clock().now().nanoseconds / 1e9 - self.start_time
-                self.time_stamps.append(current_time)
-                self.errors.append(cross_track_error)
                 
-                # Limit history
-                if len(self.errors) > self.max_history:
-                    self.time_stamps.pop(0)
-                    self.errors.pop(0)
-    
+                self.time_stamps.append(current_time)
+                self.errors.append(error)
+
     def compute_cross_track_error(self, point):
-        """Compute perpendicular distance from point to closest path segment
-        
-        🚀 This is the CORRECT metric for trajectory tracking!
-        Returns the shortest perpendicular distance to the path.
-        """
+        """Tính khoảng cách vuông góc từ robot đến quỹ đạo tham chiếu"""
+        # (Giữ nguyên logic tính toán của bạn vì nó đã tốt)
         px, py = point
-        min_cross_track = float('inf')
+        min_dist = float('inf')
         
-        # Check distance to each path segment
-        for i in range(len(self.ref_x) - 1):
+        # Tìm trong 50 điểm tham chiếu gần nhất (tối ưu hiệu năng)
+        check_range = 50
+        start_idx = max(0, len(self.ref_x) - check_range)
+        
+        for i in range(start_idx, len(self.ref_x) - 1):
             x1, y1 = self.ref_x[i], self.ref_y[i]
-            x2, y2 = self.ref_x[i + 1], self.ref_y[i + 1]
+            x2, y2 = self.ref_x[i+1], self.ref_y[i+1]
             
-            # Vector from segment start to end
             dx = x2 - x1
             dy = y2 - y1
+            seg_len_sq = dx*dx + dy*dy
             
-            # Length of segment
-            seg_length_sq = dx*dx + dy*dy
-            
-            if seg_length_sq < 1e-6:  # Degenerate segment
-                # Just compute distance to point
+            if seg_len_sq < 1e-6:
                 dist = math.sqrt((px - x1)**2 + (py - y1)**2)
             else:
-                # Parameter t represents projection of point onto line segment
-                # t=0 means projection at (x1,y1), t=1 means at (x2,y2)
-                t = max(0.0, min(1.0, ((px - x1)*dx + (py - y1)*dy) / seg_length_sq))
-                
-                # Find closest point on segment
+                t = max(0.0, min(1.0, ((px - x1)*dx + (py - y1)*dy) / seg_len_sq))
                 closest_x = x1 + t * dx
                 closest_y = y1 + t * dy
-                
-                # Distance to closest point (this is cross-track error)
                 dist = math.sqrt((px - closest_x)**2 + (py - closest_y)**2)
             
-            if dist < min_cross_track:
-                min_cross_track = dist
-        
-        return min_cross_track
-    
-    def distance(self, p1, p2):
-        """Euclidean distance"""
-        return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
-    
-    def update_plot(self, frame):
-        """Update plot data"""
-        # Update trajectory plot
-        if len(self.ref_x) > 0:
-            self.ref_line.set_data(self.ref_x, self.ref_y)
-        
-        if len(self.actual_x) > 0:
-            self.actual_line.set_data(self.actual_x, self.actual_y)
-            # Update robot position marker
-            self.robot_marker.set_data([self.actual_x[-1]], [self.actual_y[-1]])
-        
-        # Auto-scale axes
-        all_x = self.ref_x + self.actual_x
-        all_y = self.ref_y + self.actual_y
-        
-        if len(all_x) > 0:
-            margin = 1.0
-            x_min, x_max = min(all_x) - margin, max(all_x) + margin
-            y_min, y_max = min(all_y) - margin, max(all_y) + margin
-            self.ax1.set_xlim(x_min, x_max)
-            self.ax1.set_ylim(y_min, y_max)
-        
-        # Update error plot
-        if len(self.errors) > 0:
-            self.error_line.set_data(self.time_stamps, self.errors)
-            
-            # Update mean error line
-            mean_error = np.mean(self.errors)
-            self.error_mean_line.set_ydata([mean_error, mean_error])
-            
-            # Auto-scale error plot
-            time_margin = 1.0
-            error_margin = 0.5
-            self.ax2.set_xlim(0, max(self.time_stamps) + time_margin)
-            self.ax2.set_ylim(0, max(self.errors) + error_margin)
-            
-            # Update statistics text
-            max_error = max(self.errors)
-            min_error = min(self.errors)
-            current_error = self.errors[-1]
-            
-            stats_str = (
-                f'📊 Statistics: '
-                f'Mean Error: {mean_error:.3f}m | '
-                f'Current: {current_error:.3f}m | '
-                f'Max: {max_error:.3f}m | '
-                f'Min: {min_error:.3f}m | '
-                f'Points: Ref={len(self.ref_x)}, Actual={len(self.actual_x)}'
-            )
-            self.stats_text.set_text(stats_str)
-        
-        return self.ref_line, self.actual_line, self.robot_marker, self.error_line
-    
-    def run(self):
-        """Run the plotter with animation"""
-        # Start animation
-        anim = animation.FuncAnimation(
-            self.fig, 
-            self.update_plot,
-            interval=self.update_interval,
-            blit=False,
-            cache_frame_data=False
-        )
-        
-        try:
-            plt.show(block=False)
-            
-            # Keep ROS spinning in this thread
-            while rclpy.ok() and plt.fignum_exists(self.fig.number):
-                rclpy.spin_once(self, timeout_sec=0.01)
-                plt.pause(0.001)
-                
-        except KeyboardInterrupt:
-            self.get_logger().info('🛑 Shutting down plotter...')
-        finally:
-            plt.close('all')
+            if dist < min_dist:
+                min_dist = dist
+        return min_dist
 
+    def distance(self, p1, p2):
+        return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
+
+    def show_results(self):
+        """Hàm này sẽ được gọi khi Node tắt để vẽ đồ thị"""
+        if not self.actual_x:
+            print("⚠️ No data collected to plot!")
+            return
+
+        print("\n📊 Generatring Final Report...")
+        
+        # Tính toán chỉ số thống kê
+        mean_error = np.mean(self.errors) if self.errors else 0.0
+        max_error = np.max(self.errors) if self.errors else 0.0
+        rmse = np.sqrt(np.mean(np.square(self.errors))) if self.errors else 0.0
+        
+        # Setup đồ thị
+        fig = plt.figure(figsize=(12, 8))
+        fig.suptitle(f'Trajectory Tracking Result\nRMSE: {rmse:.4f}m | Max Error: {max_error:.4f}m', fontsize=16)
+
+        # 1. Đồ thị Quỹ đạo (X-Y)
+        ax1 = fig.add_subplot(2, 1, 1)
+        ax1.plot(self.ref_x, self.ref_y, 'b--', linewidth=2, label='Reference Path')
+        ax1.plot(self.actual_x, self.actual_y, 'r-', linewidth=2, label='Actual Path', alpha=0.8)
+        ax1.set_xlabel('X (m)')
+        ax1.set_ylabel('Y (m)')
+        ax1.set_title('Path Comparison')
+        ax1.legend()
+        ax1.grid(True)
+        ax1.axis('equal')
+
+        # 2. Đồ thị Sai số theo thời gian
+        ax2 = fig.add_subplot(2, 1, 2)
+        if self.errors:
+            ax2.plot(self.time_stamps, self.errors, 'g-', label='Cross-Track Error')
+            ax2.axhline(y=mean_error, color='orange', linestyle='--', label=f'Mean: {mean_error:.3f}m')
+            ax2.fill_between(self.time_stamps, 0, self.errors, color='green', alpha=0.1)
+        
+        ax2.set_xlabel('Time (s)')
+        ax2.set_ylabel('Error (m)')
+        ax2.set_title('Tracking Error over Time')
+        ax2.legend()
+        ax2.grid(True)
+
+        plt.tight_layout()
+        print("✅ Plot displayed. Close window to finish process.")
+        plt.show() # Lệnh này sẽ block cho đến khi bạn tắt cửa sổ
 
 def main(args=None):
     rclpy.init(args=args)
+    plotter = TrajectoryPlotter()
     
     try:
-        plotter = TrajectoryPlotter()
-        plotter.run()
+        # Chạy vòng lặp cho đến khi bấm Ctrl+C
+        rclpy.spin(plotter)
     except KeyboardInterrupt:
-        print('\n🛑 Keyboard interrupt!')
+        pass
     finally:
+        # Khi bấm Ctrl+C, code sẽ nhảy vào đây
+        plotter.get_logger().info('🛑 Stopping collection...')
+        
+        # Tắt ROS trước để giải phóng tài nguyên
+        plotter.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-
+            
+        # SAU ĐÓ mới hiện đồ thị
+        plotter.show_results()
 
 if __name__ == '__main__':
     main()

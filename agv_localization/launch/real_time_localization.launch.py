@@ -43,7 +43,7 @@ def launch_setup(context, *args, **kwargs):
         parameters=[
             ekf_config_file,
             {"use_sim_time": use_sim_time},
-            {"frequency": 50.0}  # Match stm32_odom throttled output (50Hz)
+            {"frequency": 15.0}  # Match stm32_odom throttled output (15Hz)
         ],
     )
     
@@ -60,7 +60,7 @@ def launch_setup(context, *args, **kwargs):
 
     # Delay AMCL activation to ensure transforms are available
     amcl_delayed = TimerAction(
-        period=5.0,  # 5s to ensure LiDAR TF is stable
+        period=3.0,  # 3s to ensure LiDAR TF is stable
         actions=[
             Node(
                 package="nav2_amcl",
@@ -70,6 +70,8 @@ def launch_setup(context, *args, **kwargs):
                 parameters=[
                     amcl_config_file,
                     {"use_sim_time": use_sim_time},
+                    {"transform_tolerance": 1.5},
+                    {"tf_broadcast": True},
                 ],
                 remappings=[("/scan", "/scan")]  # Use throttled scan
             )
@@ -107,7 +109,8 @@ def launch_setup(context, *args, **kwargs):
             {"node_names": ["map_server", "amcl"]},
             {"use_sim_time": use_sim_time},
             {"autostart": True},
-            {"bond_timeout": 10.0},  # Increase timeout to prevent warnings
+            {"bond_timeout": 30.0},  # Increase timeout to prevent warnings
+            {"bond_respawn_max_duration": 30.0},
             {"attempt_respawn_reconnection": True}  # Auto-reconnect if needed
         ],
     )
