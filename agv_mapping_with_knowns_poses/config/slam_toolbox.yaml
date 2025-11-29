@@ -1,154 +1,77 @@
-# SLAM Toolbox Configuration for AGV Mapping
-# Uses filtered odometry from EKF (IMU + Encoder fusion) to reduce drift
+# SLAM Toolbox Configuration (Stabilized - Anti Jitter)
 
 slam_toolbox:
   ros__parameters:
-    # ==========================================
-    # ODOMETRY SOURCE
-    # ==========================================
-    # CRITICAL: Use /odometry/filtered (EKF output) instead of raw /diff_cont/odom
-    # This significantly reduces drift during mapping!
-    odom_frame: odom
+    # --- FRAMES ---
     map_frame: map
-    base_frame: base_link
-    
-    # Subscribe to filtered odometry (IMU + Encoder fusion)
+    odom_frame: odom
+    base_frame: base_footprint
     scan_topic: /scan
-    # Note: odom topic is implicitly /odom but we remap in launch file to /odometry/filtered
     
-    # ==========================================
-    # SLAM MODE
-    # ==========================================
     mode: mapping
-    
-    # ==========================================
-    # SOLVER PARAMETERS
-    # ==========================================
-    # Solver plugin (solver_plugins can be: solver_plugins::CeresSolver, solver_plugins::SpaSolver, solver_plugins::G2oSolver)
+
+    # --- SOLVER ---
     solver_plugin: solver_plugins::CeresSolver
-    
-    # Ceres solver
     ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
     ceres_preconditioner: SCHUR_JACOBI
     ceres_trust_strategy: LEVENBERG_MARQUARDT
     ceres_dogleg_type: TRADITIONAL_DOGLEG
     ceres_loss_function: None
+
+    # --- [FIX 1] TĂNG NGƯỠNG CẬP NHẬT (DEADZONE) ---
+    # Robot phải đi dứt khoát mới cập nhật map.
+    # Ngăn chặn việc cập nhật liên tục khi đứng yên do nhiễu Lidar.
+    minimum_travel_distance: 0.15  # Tăng từ 0.1 lên 0.15m
+    minimum_travel_heading: 0.25   # Tăng từ 0.2 lên 0.25 rad (~14 độ)
+
+    # --- [FIX 2] TĂNG ĐỘ KHẮT KHE KHỚP MẪU ---
+    # Quan trọng nhất để chống nhảy.
+    # Chỉ sửa vị trí nếu Lidar khớp với Map cực tốt (> 0.5).
+    # Nếu Lidar nhiễu, điểm số thấp -> Bỏ qua -> Robot đứng yên theo Odom.
+    link_match_minimum_response_fine: 0.5  # Tăng mạnh từ 0.1
+
+    scan_buffer_size: 30
+    scan_buffer_maximum_scan_distance: 20.0
+    link_scan_maximum_distance: 1.5
     
-    # ==========================================
-    # SCAN MATCHER PARAMETERS
-    # ==========================================
-    # Minimum distance traveled (m) before processing scan
-    # TUNED: Increased to skip initial unstable odometry period
-    minimum_travel_distance: 0.8  # Must be float (0.8 not 1)
-    
-    # Minimum angle rotated (rad) before processing scan
-    # TUNED: Increased to reduce jerky corrections  
-    minimum_travel_heading: 0.5  # Must be float
-    
-    # Scan buffer size
-    scan_buffer_size: 20  # Increased from 10
-    scan_buffer_maximum_scan_distance: 15.0  # Increased from 10.0
-    
-    # Link match minimum response fine (lower = stricter matching)
-    # TUNED: Increased to be less aggressive
-    link_match_minimum_response_fine: 0.2  # Increased from 0.1
-    
-    # Link scan maximum distance (m)
-    link_scan_maximum_distance: 2.0  # Increased from 1.5
-    
-    # Loop search maximum distance (m)
-    loop_search_maximum_distance: 4.0  # Increased from 3.0
-    
-    # Do loop closing
-    # TUNED: Disabled to prevent jerky corrections when robot is stationary
-    do_loop_closing: false  # Changed from true
-    
-    # Loop match minimum chain size
-    loop_match_minimum_chain_size: 15  # Increased from 10
-    
-    # Loop match maximum variance coarse
-    loop_match_maximum_variance_coarse: 4.0  # Increased from 3.0
-    
-    # Loop match minimum response coarse
-    loop_match_minimum_response_coarse: 0.4  # Increased from 0.35
-    
-    # Loop match minimum response fine
-    loop_match_minimum_response_fine: 0.5  # Increased from 0.45
-    
-    # ==========================================
-    # CORRELATION PARAMETERS
-    # ==========================================
-    # Correlation search space dimension
+    # --- LOOP CLOSURE ---
+    do_loop_closing: true
+    loop_match_minimum_chain_size: 10
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine: 0.45
+
+    # Search params
     correlation_search_space_dimension: 0.5
     correlation_search_space_resolution: 0.01
     correlation_search_space_smear_deviation: 0.1
-    
-    # ==========================================
-    # LOOP CLOSURE PARAMETERS
-    # ==========================================
-    # Loop search space dimension
     loop_search_space_dimension: 8.0
     loop_search_space_resolution: 0.05
     loop_search_space_smear_deviation: 0.03
+
+    # --- [FIX 3] TIN TƯỞNG ODOMETRY HƠN ---
+    # Phạt nặng nếu SLAM cố tình nhảy xa khỏi vị trí Odom báo về.
+    distance_variance_penalty: 1.0  # Tăng từ 0.5 -> Tin Odom X,Y
+    angle_variance_penalty: 1.0     # Tin Odom Góc
     
-    # ==========================================
-    # SCAN MATCHER - DISTANCE VARIANCE PENALTY
-    # ==========================================
-    distance_variance_penalty: 0.5
-    angle_variance_penalty: 1.0
-    
-    # ==========================================
-    # SCAN MATCHER - FINE/COARSE SEARCH
-    # ==========================================
     fine_search_angle_offset: 0.00349
     coarse_search_angle_offset: 0.349
     coarse_angle_resolution: 0.0349
-    
-    # ==========================================
-    # OPTIMIZATION PARAMETERS
-    # ==========================================
-    # Minimum time interval (sec) between scans for optimization
-    # TUNED: Increased significantly to reduce jerky corrections
-    minimum_time_interval: 1.0  # Increased from 0.5
-    
-    # Transform publish period (sec)
-    # TUNED: Publish slower to reduce jerkiness (slower TF updates)
-    transform_publish_period: 0.1  # Increased from 0.02 (5x slower!)
-    
-    # Map update interval (sec)
-    # TUNED: Update map less frequently
-    map_update_interval: 5.0  # Increased from 5.0
-    
-    # Resolution (m/pixel)
-    resolution: 0.05
-    
-    # Max laser range (m) - match your Lidar spec
-    max_laser_range: 12.0
 
-    # Minimum laser range (m) - match your Lidar spec (ví dụ RPLidar A1: 0.15-0.2m)
+    # --- TIMING & TF ---
+    minimum_time_interval: 0.5
+    transform_publish_period: 0.05 
+    map_update_interval: 2.0       
+
+    # --- MAP PARAMS ---
+    resolution: 0.05
+    max_laser_range: 12.0
     minimum_range: 0.2
-    minimum_angle_penalty: 0.9
-    minimum_distance_penalty: 0.5
-    
-    # ==========================================
-    # TF PARAMETERS
-    # ==========================================
     use_scan_matching: true
     use_scan_barycenter: true
     
-    # TF timeout (sec)
+    # --- SYSTEM ---
     tf_buffer_duration: 30.0
-    
-    # Stack size for thread (bytes)
     stack_size_to_use: 40000000
-    
-    # ==========================================
-    # THROTTLE PARAMETERS
-    # ==========================================
     enable_interactive_mode: true
-    
-    # Throttle scans (process every Nth scan)
     throttle_scans: 1
-    
-    # Transform timeout (sec)
-    transform_timeout: 0.2

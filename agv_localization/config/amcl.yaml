@@ -7,33 +7,41 @@ amcl:
     odom_frame_id: "odom"
     base_frame_id: "base_footprint"
 
-    # TIN TƯỞNG ODOM TUYỆT ĐỐI (Noise cực thấp)
+    # --- CẤU HÌNH QUAN TRỌNG CHO FUSION ---
+    tf_broadcast: false      # TẮT: Để không đánh nhau với EKF Global
+    set_pose_callback: true  # BẬT: Để gửi dữ liệu cho EKF Global đọc
+
+    # 1. ODOMETRY MODEL (Tin cậy Odom)
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
-    alpha1: 0.001 
-    alpha2: 0.001
-    alpha3: 0.001
-    alpha4: 0.001
-    alpha5: 0.001
+    alpha1: 0.05 
+    alpha2: 0.05
+    alpha3: 0.05
+    alpha4: 0.05
+    alpha5: 0.05
 
-    # QUAN TRỌNG: NGƯỠNG CẬP NHẬT CAO
-    # Robot phải đi 0.5m hoặc xoay 0.5 rad (~30 độ) mới tính toán lại vị trí 1 lần
-    # Điều này giúp robot KHÔNG BAO GIỜ bị nhảy khi đứng yên
-    update_min_d: 2.0
-    update_min_a: 2.0
+    # 2. NGƯỠNG CẬP NHẬT
+    # Cập nhật thường xuyên để cung cấp data liên tục cho EKF Global
+    update_min_d: 0.20
+    update_min_a: 0.20
 
-    # Lidar Model (Coi như nhiễu cao)
+    # 3. LASER MODEL (Cấu hình chống rung Lidar)
     laser_model_type: "likelihood_field"
     max_beams: 60
-    z_hit: 0.5
-    z_rand: 0.5       # Coi 50% dữ liệu lidar là nhiễu
-    sigma_hit: 0.2
-    
-    # Particles
-    max_particles: 2000
-    min_particles: 500
+    z_hit: 0.60
+    z_rand: 0.35      # Nhiễu cao
+    sigma_hit: 0.5    # Blur rộng
+    z_short: 0.05
+    z_max: 0.05
+    lambda_short: 0.1
+    laser_likelihood_max_dist: 4.0
+
+    # 4. PARTICLES
+    max_particles: 3000
+    min_particles: 1000
+    pf_err: 0.05
+    pf_z: 0.99
     
     # Misc
-    tf_broadcast: true
-    transform_tolerance: 3.0
+    transform_tolerance: 2.0
     set_initial_pose: true
     initial_pose: {x: 0.0, y: 0.0, z: 0.0, yaw: 0.0}

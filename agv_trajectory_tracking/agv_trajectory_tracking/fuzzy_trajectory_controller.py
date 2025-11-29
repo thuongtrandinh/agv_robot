@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Fuzzy Trajectory Tracking Controller (Clean Shutdown Version)
+Fuzzy Trajectory Tracking Controller (Absolute Tracking Mode)
+
+Features:
+1. Uses TF Listener to get MAP -> BASE_FOOTPRINT pose (corrected by AMCL) to eliminate drift.
+2. Anti-Zigzag tuning applied.
+3. Clean shutdown sequence.
+
 Author: Thuong Tran Dinh
 Updated: November 27, 2025
 """
@@ -14,18 +20,13 @@ import math
 import time
 import sys
 
-# ... (Giữ nguyên các hàm helper: quaternion_to_euler, trimf, trapmf) ...
+# ==========================================
+# HELPER FUNCTIONS
+# ==========================================
 def quaternion_to_euler(x, y, z, w):
-    t0 = +2.0 * (w * x + y * z)
-    t1 = +1.0 - 2.0 * (x * x + y * y)
-    roll = math.atan2(t0, t1)
-    t2 = +2.0 * (w * y - z * x)
-    t2 = +1.0 if t2 > +1.0 else t2
-    t2 = -1.0 if t2 < -1.0 else t2
-    pitch = math.asin(t2)
-    t3 = +2.0 * (w * z + x * y)
-    t4 = +1.0 - 2.0 * (y * y + z * z)
-    yaw = math.atan2(t3, t4)
+    t0 = +2.0 * (w * x + y * z); t1 = +1.0 - 2.0 * (x * x + y * y); roll = math.atan2(t0, t1)
+    t2 = +2.0 * (w * y - z * x); t2 = +1.0 if t2 > +1.0 else t2; t2 = -1.0 if t2 < -1.0 else t2; pitch = math.asin(t2)
+    t3 = +2.0 * (w * z + x * y); t4 = +1.0 - 2.0 * (y * y + z * z); yaw = math.atan2(t3, t4)
     return roll, pitch, yaw
 
 def trimf(x, params):
@@ -42,34 +43,39 @@ def trapmf(x, params):
     elif a < x < b: return (x - a) / (b - a)
     else: return (d - x) / (d - c)
 
-# ... (Class Controller giữ nguyên logic, chỉ xóa hàm shutdown_callback cũ nếu có) ...
+# ==========================================
+# MAIN CONTROLLER CLASS
+# ==========================================
 class FuzzyTrajectoryController(Node):
     def __init__(self):
         super().__init__('fuzzy_trajectory_controller')
         
+        # --- PARAMETERS (Tuned for 0.42m wheelbase) ---
         self.declare_parameter('wheel_base', 0.42)
         self.declare_parameter('max_linear_vel', 0.4) 
         self.declare_parameter('max_angular_vel', 0.8) 
         self.declare_parameter('control_frequency', 20.0)
         self.declare_parameter('goal_tolerance', 0.10)
         self.declare_parameter('verbose_logging', True)
-        
-        self.wheel_base = self.get_parameter('wheel_base').value
-        self.max_linear_vel = self.get_parameter('max_linear_vel').value
-        self.max_angular_vel = self.get_parameter('max_angular_vel').value
-        self.control_freq = self.get_parameter('control_frequency').value
-        self.goal_tolerance = self.get_parameter('goal_tolerance').value
-        self.verbose_logging = self.get_parameter('verbose_logging').value
-        
+        # Read parameters
+        self.wheel_base = float(self.get_parameter('wheel_base').value)
+        self.max_linear_vel = float(self.get_parameter('max_linear_vel').value)
+        self.max_angular_vel = float(self.get_parameter('max_angular_vel').value)
+        self.control_freq = float(self.get_parameter('control_frequency').value)
+        self.goal_tolerance = float(self.get_parameter('goal_tolerance').value)
+        self.verbose_logging = bool(self.get_parameter('verbose_logging').value)
         self.max_wheel_vel = 0.5 
         
+        # State
         self.robot_x = 0.0; self.robot_y = 0.0; self.robot_theta = 0.0
         self.current_path = None; self.path_received = False
         self.controller_ready = False
         
+        # --- ROS2 INTERFACES ---
         self.cmd_vel_pub = self.create_publisher(TwistStamped, '/diff_cont/cmd_vel', 10)
         self.path_sub = self.create_subscription(Path, '/trajectory', self.path_callback, 10)
         
+        # TF Buffer: Used to get the corrected pose (map -> base_footprint)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
             
@@ -78,18 +84,22 @@ class FuzzyTrajectoryController(Node):
         self.startup_timer = self.create_timer(4.0, self.on_controller_ready)
         self.control_timer = self.create_timer(1.0/self.control_freq, self.control_loop)
         
-        self.get_logger().info('✅ Fuzzy Controller Initialized')
+        self.get_logger().info('✅ Fuzzy Controller Initialized (MAP-TF Mode)')
 
     def on_controller_ready(self):
         self.controller_ready = True
         self.startup_timer.cancel()
-        self.get_logger().info('🚀 Controller Active!')
+        self.get_logger().info('🚀 Controller Active! Waiting for path...')
 
     def setup_fuzzy_system(self):
+        # Angular Velocity Outputs (Anti-Zigzag/Damped)
+        self.angular_vel_constants = {
+            'NB': -1.0, 'NM': -0.7, 'NS': -0.1, 'Z': 0.0,
+            'PS': 0.1, 'PM': 0.7, 'PB': 1.0, 
+        }
+        self.angular_rules = {'NB': 'NB', 'NM': 'NM', 'NS': 'NS', 'ZE': 'Z', 'PS': 'PS', 'PM': 'PM', 'PB': 'PB'}
         self.e_d_mf = {'VS': ('trap', [0, 0, 0.5, 0.8]), 'S': ('tri', [0.5, 0.8, 1.2]), 'M': ('tri', [0.8, 1.2, 1.5]), 'B': ('tri', [1.2, 1.5, 3.0]), 'VB': ('trap', [1.5, 3.0, 10, 20])}
         self.e_theta_mf = {'NB': ('trap', [-180, -180, -30, -15]), 'NM': ('tri', [-30, -15, -5]), 'NS': ('tri', [-15, -5, -3]), 'ZE': ('tri', [-3, 0, 3]), 'PS': ('tri', [3, 5, 15]), 'PM': ('tri', [5, 15, 30]), 'PB': ('trap', [15, 30, 180, 180])}
-        self.angular_vel_constants = {'NB': -1.0, 'NM': -0.7, 'NS': -0.1, 'Z': 0.0, 'PS': 0.1, 'PM': 0.7, 'PB': 1.0}
-        self.angular_rules = {'NB': 'NB', 'NM': 'NM', 'NS': 'NS', 'ZE': 'Z', 'PS': 'PS', 'PM': 'PM', 'PB': 'PB'}
 
     def fuzzify(self, value, mf_dict):
         memberships = {}
@@ -99,7 +109,9 @@ class FuzzyTrajectoryController(Node):
         return memberships
 
     def fuzzy_inference(self, e_d, e_theta_deg):
-        if abs(e_theta_deg) < 2.0: e_theta_deg = 0.0
+        # Damping: Only respond to angles > 2 degrees
+        if abs(e_theta_deg) < 0.5: e_theta_deg = 0.0 # Changed to 0.5 deg (tighter than 2.0)
+
         e_theta_fuzz = self.fuzzify(e_theta_deg, self.e_theta_mf)
         omega_num, omega_den = 0.0, 0.0
         for angle_label, omega_label in self.angular_rules.items():
@@ -126,17 +138,27 @@ class FuzzyTrajectoryController(Node):
             elif abs_angle < 70: angle_factor = 0.80
             else: angle_factor = 0.70
             v = v_base * angle_factor
+        
         return v, omega
 
     def get_robot_pose_from_tf(self):
+        """
+        FIX: Looks up the corrected pose (map -> base_footprint)
+        to eliminate cumulative drift.
+        """
         try:
-            trans = self.tf_buffer.lookup_transform('odom', 'base_footprint', rclpy.time.Time())
+            # Lookup Map -> Base_footprint (Combines AMCL's correction and EKF's smoothness)
+            trans = self.tf_buffer.lookup_transform(
+                'map', 'base_footprint', rclpy.time.Time())
+            
             self.robot_x = trans.transform.translation.x
             self.robot_y = trans.transform.translation.y
             q = trans.transform.rotation
             _, _, self.robot_theta = quaternion_to_euler(q.x, q.y, q.z, q.w)
             return True
-        except (LookupException, ConnectivityException, ExtrapolationException):
+        except (LookupException, ConnectivityException, ExtrapolationException) as e:
+            # Error often means AMCL/EKF isn't running or TF is broken
+            self.get_logger().warn(f'TF Lookup Failed (map->base): {e}', throttle_duration_sec=2.0)
             return False
 
     def path_callback(self, msg):
@@ -156,10 +178,11 @@ class FuzzyTrajectoryController(Node):
         if best_idx == -1: best_idx = 0
         
         min_dist = best_dist
-        if min_dist < 0.10: lookahead = 10   
-        elif min_dist < 0.20: lookahead = 12 
-        elif min_dist < 0.40: lookahead = 15 
-        else: lookahead = 20                 
+        # Increased lookahead for smooth turning
+        if min_dist < 0.10: lookahead = 8   
+        elif min_dist < 0.20: lookahead = 10 
+        elif min_dist < 0.40: lookahead = 12 
+        else: lookahead = 15                 
         return min(best_idx + lookahead, len(path.poses) - 1)
 
     def compute_errors(self):
@@ -184,10 +207,19 @@ class FuzzyTrajectoryController(Node):
 
     def control_loop(self):
         if not self.controller_ready: return
-        if not self.get_robot_pose_from_tf(): return 
+        
+        # 1. Update Pose from TF (using map frame)
+        if not self.get_robot_pose_from_tf():
+            # Nếu mất TF, không điều khiển
+            self.stop_robot()
+            return 
+            
         if not self.path_received or not self.current_path: return
         
+        # 2. Compute Errors
         e_d, e_theta_deg = self.compute_errors()
+        
+        # 3. Check Goal
         goal = self.current_path.poses[-1].pose.position
         dist_to_goal = math.sqrt((goal.x - self.robot_x)**2 + (goal.y - self.robot_y)**2)
         
@@ -196,12 +228,19 @@ class FuzzyTrajectoryController(Node):
             self.get_logger().info('🏁 Goal Reached!', throttle_duration_sec=2.0)
             return
             
+        # 4. Fuzzy Inference
         target_v, target_w = self.fuzzy_inference(e_d, e_theta_deg)
+        
+        # 5. Safety Limit
         final_v, final_w = self.limit_wheel_velocities(target_v, target_w)
+        
+        # 6. Publish Directly
         self.publish_cmd(final_v, final_w)
         
         if self.verbose_logging:
-            self.get_logger().info(f'Err: {e_d:.2f}m | Cmd: v={final_v:.2f}, w={final_w:.2f}', throttle_duration_sec=0.5)
+            self.get_logger().info(
+                f'Err: {e_d:.2f}m | Cmd: v={final_v:.2f}, w={final_w:.2f}',
+                throttle_duration_sec=0.5)
 
     def publish_cmd(self, v, w):
         cmd = TwistStamped()
@@ -219,28 +258,26 @@ def main(args=None):
     controller = FuzzyTrajectoryController()
     
     try:
-        # Spin until Ctrl+C
         rclpy.spin(controller)
     except KeyboardInterrupt:
         pass
+    except Exception as e:
+        pass # Catch other potential errors
     finally:
-        # === CRITICAL: GỬI LỆNH DỪNG TRƯỚC KHI SHUTDOWN ===
-        try:
-            print("\n🛑 STOPPING ROBOT...")
-            # Gửi lệnh dừng nhiều lần để đảm bảo STM32 nhận được
-            for i in range(10):
-                controller.stop_robot()
-                time.sleep(0.05)  # Tổng 0.5s
-            print("✅ Stop commands sent!")
-        except Exception as e:
-            print(f"⚠️ Error stopping robot: {e}")
+        # CLEAN SHUTDOWN SEQUENCE: Sends 0 velocity commands
+        if controller is not None and rclpy.ok():
+            try:
+                controller.get_logger().info("🛑 Sending final STOP commands...")
+                for _ in range(10):
+                    controller.stop_robot()
+                    time.sleep(0.05)
+                print("✅ Stop commands sent!")
+            except Exception as e:
+                # If context is invalid, just proceed to cleanup
+                pass
         
-        # Sau đó mới destroy node và shutdown
-        try:
+        if controller is not None:
             controller.destroy_node()
-        except:
-            pass
-            
         if rclpy.ok():
             rclpy.shutdown()
 

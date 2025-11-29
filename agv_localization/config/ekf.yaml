@@ -1,13 +1,11 @@
 ekf_filter_node:
     ros__parameters:
-      use_sim_time: true
+      use_sim_time: false # Chạy trên robot thật
+
+      # Tần số ổn định để phục vụ Controller
+      frequency: 20.0
       
-      # Tần số: Giữ 15.0 hoặc tăng nhẹ lên 20.0 nếu đã tắt Plotter
-      frequency: 30.0
-      
-      # QUAN TRỌNG: Thời gian chờ tối đa cho sensor.
-      # 0.1s = 100ms. Nếu sensor im lặng quá 100ms, EKF sẽ tự predict tiếp mà không chờ.
-      sensor_timeout: 0.1
+      sensor_timeout: 0.1 # 100ms
 
       two_d_mode: true
       publish_tf: true
@@ -15,76 +13,70 @@ ekf_filter_node:
       map_frame: map
       odom_frame: odom
       base_link_frame: base_footprint
-      world_frame: odom
+      world_frame: odom # EKF Local Frame
 
       # ============================================
-      # SENSOR INPUTS (FIXED QUEUE SIZE)
+      # SENSOR INPUTS (Fusing 3 sources)
       # ============================================
       
-      # IMU
+      # IMU (1) - Lấy vyaw và ax (Đã Calib)
       imu0: /imu_with_covariance
       imu0_config: [false, false, false,
                     false, false, false,
                     false, false, false,
-                    false, false, true,
-                    true,  false, false]
+                    false, false, true,  # vyaw (Angular Velocity around Z)
+                    true,  false, false] # ax (Linear Acceleration along X)
       imu0_differential: true
-      imu0_pose_use_child_frame: false
-      imu0_remove_gravitational_acceleration: true
-      imu0_relative: false
-      
-      # GIẢM QUEUE SIZE: Giảm trễ do xếp hàng
       imu0_queue_size: 2 
+      imu0_remove_gravitational_acceleration: true
 
-      # Odom (Encoder)
+      # Odom (2) - Lấy vx và vyaw (Encoder)
       odom0: /diff_cont/odom
-      # Chỉ lấy vận tốc (vx, vy, vyaw) - Giúp phản ứng nhanh hơn
       odom0_config: [false, false, false,
                      false, false, false,
-                     true,  false, false,
-                     false, false, true,
+                     true,  false, false, # vx
+                     false, false, true,  # vyaw
                      false, false, false]
       odom0_differential: false
-      odom0_pose_use_child_frame: false
-      odom0_relative: false
-      
-      # GIẢM QUEUE SIZE
       odom0_queue_size: 2
 
-      # ArUco Pose
+      # ArUco Pose (3) - Tốc độ thấp, độ trễ cao
       pose0: /aruco/pose_with_covariance
-      pose0_config: [true,  true,  false,
-                     false, false, true,
+      pose0_config: [true,  true,  false, # Vẫn lấy vị trí X, Y
+                     false, false, true,  # Vẫn lấy Yaw
                      false, false, false,
                      false, false, false,
                      false, false, false]
       pose0_differential: false
+      pose0_queue_size: 1  # Chỉ lấy gói tin ArUco mới nhất
+      pose0_nodelay: false
       
-      # ArUco về bản chất là trễ (do xử lý ảnh), nên để queue nhỏ nhất
-      pose0_queue_size: 1
-      pose0_nodelay: true  # Cố gắng xử lý ngay lập tức
+      # Tăng ngưỡng từ chối cao để ArUco không làm EKF crash
+      pose0_rejection_threshold: 15.0 
 
-      pose0_rejection_threshold: 10.0
-
-      # Process Noise: Tăng nhẹ noise của vận tốc để EKF tin vào sensor mới hơn là model cũ
-      # (Giúp hệ thống phản ứng nhanh hơn với thay đổi thực tế)
-      # Hàng 7 (vx), 8 (vy), 9 (vz), 10 (vroll), 11 (vpitch), 12 (vyaw)
-      process_noise_covariance: [0.05, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
-                                 0.0,    0.05, 0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+      # ============================================
+      # COVARIANCES & TRUST (Điều chỉnh tín nhiệm)
+      # ============================================
+      
+      # Process Noise: Mức thấp, tin tưởng vào mô hình chuyển động của robot
+      # Tuy nhiên tăng nhẹ tốc độ để EKF tin vào sensor hơn là dự đoán (hàng 7, 8, 12)
+      process_noise_covariance: [0.01, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                 0.0,    0.01, 0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
                                  0.0,    0.0,    0.06, 0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
                                  0.0,    0.0,    0.0,    0.03, 0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
                                  0.0,    0.0,    0.0,    0.0,    0.03, 0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
                                  0.0,    0.0,    0.0,    0.0,    0.0,    0.06, 0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
-                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.025, 0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.025, 0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,  # vx noise
                                  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.025, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
                                  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.04, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
                                  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.01, 0.0,    0.0,    0.0,    0.0,    0.0,
                                  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.01, 0.0,    0.0,    0.0,    0.0,
-                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.02, 0.0,    0.0,    0.0,
+                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.02, 0.0,    0.0,    0.0,  # vyaw noise
                                  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.01, 0.0,    0.0,
                                  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.01, 0.0,
                                  0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.015]
 
+      # Initial Estimate Covariance: Mức rất thấp (tin tưởng vào giá trị khởi tạo)
       initial_estimate_covariance: [1e-9,   0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
                                     0.0,    1e-9,   0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
                                     0.0,    0.0,    1e-9,   0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
