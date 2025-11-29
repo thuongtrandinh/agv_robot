@@ -20,7 +20,7 @@ public:
     
     // 🔥 NEW PARAMETER: GYRO SCALE FACTOR
     // Đã tính toán từ thực nghiệm: 90 / 86 = 1.046. Nhân với hệ số cũ 1.274 -> 1.333
-    this->declare_parameter<double>("gyro_scale_factor", 1.333); 
+    this->declare_parameter<double>("gyro_scale_factor", 1.07); 
 
     // Topics
     this->declare_parameter<std::string>("sensor_data_topic", "/sensor_data");
