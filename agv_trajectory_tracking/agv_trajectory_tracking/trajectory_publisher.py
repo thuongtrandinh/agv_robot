@@ -64,7 +64,7 @@ class TrajectoryPublisher(Node):
 
         shape_factor = 1.0
         if self.trajectory_type == 2: # SQUARE
-            side = self.radius * 2.0
+            side = self.radius
             perimeter_pos = (t * self.base_speed) % (4 * side)
             dist_on_side = perimeter_pos % side
             threshold = side * 0.15 
