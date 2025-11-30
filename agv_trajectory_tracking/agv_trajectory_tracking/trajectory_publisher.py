@@ -64,7 +64,7 @@ class TrajectoryPublisher(Node):
 
         shape_factor = 1.0
         if self.trajectory_type == 2: # SQUARE
-            side = self.radius
+            side = self.radius * 2
             perimeter_pos = (t * self.base_speed) % (4 * side)
             dist_on_side = perimeter_pos % side
             threshold = side * 0.15 
@@ -88,7 +88,7 @@ class TrajectoryPublisher(Node):
         return ramp_factor * shape_factor
 
     def trajectory_reference_square(self, t):
-        side = self.radius * 2.0
+        side = self.radius * 2
         total_len = 4 * side
         s = (t * self.base_speed) % total_len
         if s < side: x = self.center_x + side/2; y = self.center_y - side/2 + s; th = math.pi/2

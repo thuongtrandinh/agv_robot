@@ -87,8 +87,8 @@ class FuzzyTrajectoryController(Node):
 
     def setup_fuzzy_system(self):
         self.e_d_mf = {'VS': ('trap', [0, 0, 0.5, 0.8]), 'S': ('tri', [0.5, 0.8, 1.2]), 'M': ('tri', [0.8, 1.2, 1.5]), 'B': ('tri', [1.2, 1.5, 3.0]), 'VB': ('trap', [1.5, 3.0, 10, 20])}
-        self.e_theta_mf = {'NB': ('trap', [-180, -180, -30, -15]), 'NM': ('tri', [-30, -15, -5]), 'NS': ('tri', [-15, -5, -3]), 'ZE': ('tri', [-3, 0, 3]), 'PS': ('tri', [3, 5, 15]), 'PM': ('tri', [5, 15, 30]), 'PB': ('trap', [15, 30, 180, 180])}
-        self.angular_vel_constants = {'NB': -1.0, 'NM': -0.7, 'NS': -0.1, 'Z': 0.0, 'PS': 0.1, 'PM': 0.7, 'PB': 1.0}
+        self.e_theta_mf = {'NB': ('trap', [-180, -180, -30, -15]), 'NM': ('tri', [-30, -15, -5]), 'NS': ('tri', [-15, -5, -1]), 'ZE': ('tri', [-1, 0, 1]), 'PS': ('tri', [1, 5, 15]), 'PM': ('tri', [5, 15, 30]), 'PB': ('trap', [15, 30, 180, 180])}
+        self.angular_vel_constants = {'NB': -1.8, 'NM': -1.0, 'NS': -0.05, 'Z': 0.0, 'PS': 0.05, 'PM': 1.0, 'PB': 1.8}
         self.angular_rules = {'NB': 'NB', 'NM': 'NM', 'NS': 'NS', 'ZE': 'Z', 'PS': 'PS', 'PM': 'PM', 'PB': 'PB'}
 
     def fuzzify(self, value, mf_dict):
@@ -156,10 +156,14 @@ class FuzzyTrajectoryController(Node):
         if best_idx == -1: best_idx = 0
         
         min_dist = best_dist
-        if min_dist < 0.10: lookahead = 10   
-        elif min_dist < 0.20: lookahead = 12 
-        elif min_dist < 0.40: lookahead = 15 
-        else: lookahead = 20                 
+        if min_dist < 0.05: 
+            lookahead = 25   
+        elif min_dist < 0.15: 
+            lookahead = 15
+        elif min_dist < 0.30: 
+            lookahead = 10
+        else: 
+            lookahead = 5              
         return min(best_idx + lookahead, len(path.poses) - 1)
 
     def compute_errors(self):

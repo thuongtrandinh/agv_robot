@@ -16,7 +16,7 @@ def launch_setup(context, *args, **kwargs):
     
     if traj_type == '1': # === CIRCLE (Dễ) ===
         print(f"🚀 MODE: CIRCLE (R={radius_val}m)")
-        traj_speed = 0.3         
+        traj_speed = 0.35         
         ramp_time = 3.0          
         corner_scale = 1.0
         ctrl_max_lin = 0.25      
@@ -24,10 +24,10 @@ def launch_setup(context, *args, **kwargs):
         
     elif traj_type == '2': # === SQUARE (Trung bình) ===
         print(f"🚀 MODE: SQUARE (Side={radius_val}m)")
-        traj_speed = 0.4        
-        ramp_time = 3.5          
+        traj_speed = 0.25        
+        ramp_time = 4.0          
         corner_scale = 0.4       
-        ctrl_max_lin = 0.25      
+        ctrl_max_lin = 0.15      
         ctrl_max_ang = 1.2       
         
     elif traj_type == '3': # === FIGURE-8 (Khó nhất) ===
