@@ -10,8 +10,8 @@ Uses custom membership functions and Sugeno inference engine with constant outpu
 
 import rclpy
 from rclpy.node import Node
-from nav_msgs.msg import Path
-from geometry_msgs.msg import TwistStamped, PoseWithCovarianceStamped
+from nav_msgs.msg import Path, Odometry
+from geometry_msgs.msg import TwistStamped
 import math
 import signal
 import sys
@@ -109,10 +109,10 @@ class FuzzyTrajectoryController(Node):
         # ROS2 interfaces
         self.cmd_vel_pub = self.create_publisher(TwistStamped, '/diff_cont/cmd_vel', 10)
         
-        # Subscribe to AMCL pose for robot localization
+        # Subscribe to filtered odometry for robot localization
         self.pose_sub = self.create_subscription(
-            PoseWithCovarianceStamped, '/amcl_pose', 
-            self.amcl_pose_callback, 10)
+            Odometry, '/odometry/filtered', 
+            self.odometry_callback, 10)
         
         self.path_sub = self.create_subscription(Path, '/trajectory', 
                                                   self.path_callback, 10)
@@ -301,12 +301,11 @@ class FuzzyTrajectoryController(Node):
         
         return v, omega
     
-    def amcl_pose_callback(self, msg):
-        """Update robot pose from AMCL localization
+    def odometry_callback(self, msg):
+        """Update robot pose from filtered odometry
         
-        AMCL provides pose estimation in the map frame, which is more
-        accurate than raw odometry as it corrects for drift using
-        particle filter localization.
+        Uses /odometry/filtered topic which provides filtered odometry
+        estimation combining multiple sensor sources.
         """
         self.robot_x = msg.pose.pose.position.x
         self.robot_y = msg.pose.pose.position.y
