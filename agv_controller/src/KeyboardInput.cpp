@@ -120,6 +120,7 @@ void KeyboardInput::keyboardLoop()
 
         case 'c':
         case 'C':
+        case ' ':  // Space key
             linear_speed_  = 0.0;
             angular_speed_ = 0.0;
             break;
