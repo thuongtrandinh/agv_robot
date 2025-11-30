@@ -11,6 +11,8 @@ def launch_setup(context, *args, **kwargs):
     
     map_name_str = "lab208b3"  # Fixed to use the lab208b3 map
     use_sim_time = LaunchConfiguration("use_sim_time", default="false")
+    launch_rviz_str = context.launch_configurations.get('launch_rviz', 'true')
+    launch_rviz = launch_rviz_str.lower() == 'true'
     
     # Get spawn position from arguments
     init_x = float(context.launch_configurations.get('x_pos', '0'))
@@ -18,20 +20,34 @@ def launch_setup(context, *args, **kwargs):
     init_yaw = float(context.launch_configurations.get('yaw', '0.0'))
     
     pkg_dir = get_package_share_directory("agv_localization")
+    mobile_robot_pkg = get_package_share_directory("mobile_robot")
     
     # Use the AMCL configuration for lab208b3
     amcl_config_file = os.path.join(pkg_dir, "config", "amcl.yaml")
+    
+    # RViz config file from mobile_robot package
+    rviz_config_file = os.path.join(mobile_robot_pkg, 'rviz', 'rviz2.rviz')
+    
+    # RViz2 node
+    rviz_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        output='screen',
+        arguments=["-d", rviz_config_file],
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
     
     print(f"✅ Loading map: {map_name_str}")
     print(f"✅ AMCL config: {amcl_config_file}")
     print(f"✅ Initial pose: x={init_x}, y={init_y}, yaw={init_yaw}")
     
-    map_path = PathJoinSubstitution([
-        get_package_share_directory("agv_mapping_with_knowns_poses"),
-        "maps",
-        map_name_str,
-        "lab208b3.yaml"
-    ])
+    # 🔧 FIX: Use absolute path instead of PathJoinSubstitution
+    map_pkg_dir = get_package_share_directory("agv_mapping_with_knowns_poses")
+    map_path = os.path.join(map_pkg_dir, "maps", map_name_str, "lab208b3.yaml")
+    
+    print(f"✅ Map file: {map_path}")
+    print(f"✅ Map exists: {os.path.exists(map_path)}")
 
     # EKF for sensor fusion (high frequency for smooth tracking)
     ekf_config_file = os.path.join(pkg_dir, "config", "ekf.yaml")
@@ -57,23 +73,24 @@ def launch_setup(context, *args, **kwargs):
         ],
     )
 
-    # Delay AMCL activation to ensure transforms are available
-    amcl_delayed = TimerAction(
-        period=5.0,  # 5s to ensure LiDAR TF is stable
-        actions=[
-            Node(
-                package="nav2_amcl",
-                executable="amcl",
-                name="amcl",
-                output="screen",
-                parameters=[
-                    amcl_config_file,
-                    {"use_sim_time": use_sim_time},
-                    {"transform_tolerance": 5.0},  # Increased to handle delays
-                    {"tf_broadcast": True},
-                ],
-            )
+    # AMCL node - no delay needed, lifecycle manager handles activation
+    nav2_amcl = Node(
+        package="nav2_amcl",
+        executable="amcl",
+        name="amcl",
+        output="screen",
+        emulate_tty=True,
+        parameters=[
+            amcl_config_file,
+            {"use_sim_time": use_sim_time},
+            # Override initial pose from launch arguments
+            {"set_initial_pose": True},
+            {"initial_pose.x": init_x},
+            {"initial_pose.y": init_y},
+            {"initial_pose.z": 0.0},
+            {"initial_pose.yaw": init_yaw},
         ]
+        # No remapping needed - AMCL uses TF (odom->base_footprint) from EKF
     )
 
     # ArUco Localizer - Uses saved marker positions to correct robot pose
@@ -113,13 +130,19 @@ def launch_setup(context, *args, **kwargs):
         ],
     )
 
-    return [
+    nodes_to_launch = [
         ekf_node,
         nav2_map_server,
-        amcl_delayed,
+        nav2_amcl,
         aruco_localizer,  # ArUco localization for drift correction
         lifecycle
     ]
+    
+    # Conditionally add RViz2
+    if launch_rviz:
+        nodes_to_launch.append(rviz_node)
+    
+    return nodes_to_launch
 
 
 def generate_launch_description():
@@ -146,11 +169,18 @@ def generate_launch_description():
         default_value="0.0",
         description="Initial yaw orientation in radians"
     )
+    
+    launch_rviz_arg = DeclareLaunchArgument(
+        "launch_rviz",
+        default_value="true",
+        description="Launch RViz2 for visualization"
+    )
 
     return LaunchDescription([
         use_sim_time_arg,
         x_pos_arg,
         y_pos_arg,
         yaw_arg,
+        launch_rviz_arg,
         OpaqueFunction(function=launch_setup),
     ])

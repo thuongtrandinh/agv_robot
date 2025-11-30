@@ -1,39 +1,118 @@
 amcl:
   ros__parameters:
-    use_sim_time: false
+    use_sim_time: True
     
-    # Frames
+    # ==========================================
+    # QoS OVERRIDES - Critical for RPLidar compatibility
+    # ==========================================
+    qos_overrides:
+      /scan:
+        durability: volatile
+        reliability: reliable
+    
+    # ==========================================
+    # FRAME IDs
+    # ==========================================
     global_frame_id: "map"
     odom_frame_id: "odom"
     base_frame_id: "base_footprint"
-
-    # TIN TƯỞNG ODOM TUYỆT ĐỐI (Noise cực thấp)
+    
+    # ==========================================
+    # ODOMETRY MODEL - Use wheel encoder + IMU
+    # ==========================================
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
-    alpha1: 0.001 
-    alpha2: 0.001
-    alpha3: 0.001
-    alpha4: 0.001
-    alpha5: 0.001
-
-    # QUAN TRỌNG: NGƯỠNG CẬP NHẬT CAO
-    # Robot phải đi 0.5m hoặc xoay 0.5 rad (~30 độ) mới tính toán lại vị trí 1 lần
-    # Điều này giúp robot KHÔNG BAO GIỜ bị nhảy khi đứng yên
-    update_min_d: 2.0
-    update_min_a: 2.0
-
-    # Lidar Model (Coi như nhiễu cao)
+    
+    # Odometry noise model (alpha parameters)
+    # BALANCED: Trust EKF but also allow AMCL to correct
+    # Sweet spot: 0.08-0.12 for EKF-filtered odometry
+    alpha1: 0.1   # Rotation noise from rotation
+    alpha2: 0.1   # Rotation noise from translation
+    alpha3: 0.1   # Translation noise from translation
+    alpha4: 0.1   # Translation noise from rotation
+    alpha5: 0.1   # Strafe noise
+    
+    # ==========================================
+    # SENSOR TOPICS
+    # ==========================================
+    scan_topic: scan  # LiDAR topic
+    # AMCL will subscribe to /diff_cont/odom_with_covariance automatically
+    # because it looks for Odometry messages on the odom frame
+    
+    # ==========================================
+    # TRANSFORM & TIMING
+    # ==========================================
+    tf_broadcast: true
+    transform_tolerance: 1.0
+    update_min_a: 0.2
+    update_min_d: 0.25
+    z_hit: 0.5
+    z_max: 0.05
+    z_rand: 0.5
+    z_short: 0.05
+    scan_topic: scan
+    # Initial pose - MUST match robot spawn position in Gazebo!
+    set_initial_pose: true
+    initial_pose:
+      x: 0  # Match x_pos in launch_sim.launch.py
+      y: 0  # Match y_pos in launch_sim.launch.py
+      z: 0.0
+      yaw: 0.0  # Match robot orientation at spawn
+    
+    # ==========================================
+    # PARTICLE FILTER SETTINGS
+    # ==========================================
+    # TUNED: Fewer particles since EKF odometry is accurate
+    max_particles: 1000   # Reduced from 2000
+    min_particles: 200    # Reduced from 500
+    pf_err: 0.03          # Reduced from 0.05 (tighter convergence)
+    pf_z: 0.99
+    resample_interval: 1
+    
+    # Resample thresholds - when to redistribute particles
+    spatial_resample_threshold: 0.5   # meters
+    temporal_resample_threshold: 0.2  # radians
+    
+    # Initial pose uncertainty (covariance)
+    initial_cov_xx: 0.25
+    initial_cov_yy: 0.25
+    initial_cov_aa: 0.26
+    
+    # Update thresholds (when to update filter)
+    # TUNED: Update more frequently for smoother tracking
+    update_min_d: 0.1     # Reduced from 0.25 (update every 10cm)
+    update_min_a: 0.1     # Reduced from 0.2 (update every ~6 degrees)
+    
+    # ==========================================
+    # LASER MODEL
+    # ==========================================
     laser_model_type: "likelihood_field"
     max_beams: 60
-    z_hit: 0.5
-    z_rand: 0.5       # Coi 50% dữ liệu lidar là nhiễu
-    sigma_hit: 0.2
+    laser_max_range: 12.0      # RPLidar A1 max range
+    laser_min_range: 0.12      # RPLidar A1 min range
+    laser_likelihood_max_dist: 2.0
     
-    # Particles
-    max_particles: 2000
-    min_particles: 500
+    # Laser model weights
+    # BALANCED: Trust laser but also account for noise
+    z_hit: 0.7        # Good matches (not too high)
+    z_short: 0.05
+    z_max: 0.05
+    z_rand: 0.2       # Some random noise tolerance
+    sigma_hit: 0.18   # Moderate beam matching tolerance
+    lambda_short: 0.1
     
-    # Misc
-    tf_broadcast: true
-    transform_tolerance: 3.0
-    set_initial_pose: true
-    initial_pose: {x: 0.0, y: 0.0, z: 0.0, yaw: 0.0}
+    # Beam skip (for computational efficiency)
+    do_beamskip: false
+    beam_skip_distance: 0.5
+    beam_skip_error_threshold: 0.9
+    beam_skip_threshold: 0.3
+    
+    # ==========================================
+    # RECOVERY BEHAVIOR
+    # ==========================================
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+    
+    # ==========================================
+    # POSE PUBLISHING
+    # ==========================================
+    save_pose_rate: 0.5
