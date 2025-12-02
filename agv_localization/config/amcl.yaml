@@ -8,40 +8,44 @@ amcl:
     base_frame_id: "base_footprint"
 
     # --- CẤU HÌNH QUAN TRỌNG CHO FUSION ---
-    tf_broadcast: false      # TẮT: Để không đánh nhau với EKF Global
+    tf_broadcast: true       # BẬT cho standalone test (set false khi dùng với EKF Global)
     set_pose_callback: true  # BẬT: Để gửi dữ liệu cho EKF Global đọc
 
-    # 1. ODOMETRY MODEL (Tin cậy Odom)
+    # 1. ODOMETRY MODEL (Tin odometry cao vì đã scale gyro)
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
-    alpha1: 0.05 
-    alpha2: 0.05
-    alpha3: 0.05
-    alpha4: 0.05
-    alpha5: 0.05
+    alpha1: 0.005  # Rất thấp - odometry đã scale chính xác
+    alpha2: 0.005  # Tin rotation->translation
+    alpha3: 0.008  # Translation noise thấp
+    alpha4: 0.005  # Translation->rotation tin cậy
+    alpha5: 0.001  # Strafe gần 0
 
-    # 2. NGƯỠNG CẬP NHẬT
-    # Cập nhật thường xuyên để cung cấp data liên tục cho EKF Global
-    update_min_d: 0.20
-    update_min_a: 0.20
+    # 2. NGƯỠNG CẬP NHẬT (Update thường xuyên để laser correction kịp thời)
+    update_min_d: 0.15  # Giảm để update nhanh hơn - chống trôi
+    update_min_a: 0.15  # Update khi quay nhẹ
+    resample_interval: 1  # Resample mỗi update để laser có tác dụng
 
-    # 3. LASER MODEL (Cấu hình chống rung Lidar)
+    # 3. LASER MODEL (Tin laser cao để chống trôi tích lũy)
     laser_model_type: "likelihood_field"
-    max_beams: 60
-    z_hit: 0.60
-    z_rand: 0.35      # Nhiễu cao
-    sigma_hit: 0.5    # Blur rộng
-    z_short: 0.05
-    z_max: 0.05
+    laser_max_range: 12.0
+    laser_min_range: 0.15
+    max_beams: 80     # Tăng để matching chính xác hơn
+    z_hit: 0.85       # Tin laser rất cao
+    z_rand: 0.10      # Giảm random noise
+    sigma_hit: 0.15   # Matching chặt chẽ
+    z_short: 0.03
+    z_max: 0.02
     lambda_short: 0.1
-    laser_likelihood_max_dist: 4.0
+    laser_likelihood_max_dist: 3.0
 
-    # 4. PARTICLES
+    # 4. PARTICLES (Vừa phải - odometry tốt nên không cần nhiều)
     max_particles: 3000
     min_particles: 1000
-    pf_err: 0.05
+    pf_err: 0.02      # Spatial error thấp
     pf_z: 0.99
+    recovery_alpha_slow: 0.0001  # Recovery chậm - tin odometry
+    recovery_alpha_fast: 0.02
     
     # Misc
-    transform_tolerance: 2.0
+    transform_tolerance: 0.5  # Chặt chẽ
     set_initial_pose: true
     initial_pose: {x: 0.0, y: 0.0, z: 0.0, yaw: 0.0}

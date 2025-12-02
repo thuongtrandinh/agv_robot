@@ -142,9 +142,12 @@ private:
         odom.twist.twist.linear.x = vx;
         odom.twist.twist.angular.z = vtheta_fused;
 
-        // Covariance
-        odom.pose.covariance[0] = 0.001; odom.pose.covariance[7] = 0.001; odom.pose.covariance[35] = 0.001;
-        odom.twist.covariance[0] = 0.001; odom.twist.covariance[35] = 0.001;
+        // Covariance - Rất thấp vì đã scale gyro chính xác
+        odom.pose.covariance[0] = 0.0001;  // x position variance
+        odom.pose.covariance[7] = 0.0001;  // y position variance  
+        odom.pose.covariance[35] = 0.0001; // yaw variance
+        odom.twist.covariance[0] = 0.0001; // vx variance
+        odom.twist.covariance[35] = 0.0001; // vyaw variance
 
         odom_pub_->publish(odom);
 
