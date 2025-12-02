@@ -281,13 +281,13 @@
 	</joint>
 	<!--  End ZED2 -->
 
-	<!-- Imu -->
+	<!-- IMU (trên mặt robot, phía trước base_link) -->
     <link name="imu_link"/>
     
     <joint name="imu_joint" type="fixed">
-        <parent link="zed2_link"/>
+        <parent link="base_link"/>
         <child link="imu_link"/>
-        <origin xyz="0 0.05 -0.0115" rpy="0 0 0"/>
+        <origin xyz="0.13 0.0 0.27" rpy="0 0 0"/>
     </joint>
     <!-- End IMU -->
 
