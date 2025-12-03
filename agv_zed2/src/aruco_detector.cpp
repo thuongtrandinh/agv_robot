@@ -37,8 +37,8 @@ public:
         params_->cornerRefinementMinAccuracy = 0.02;  // Giảm chính xác một chút cho tốc độ
         params_->minCornerDistanceRate = 0.05;  // Tránh false positive
         
-        // Board đơn giản cho refine (không cần grid phức tạp)
-        board_ = cv::aruco::GridBoard::create(1, 1, marker_size_, 0.0f, dict_);
+        // Board đơn giản cho refine (markerSeparation phải > 0)
+        board_ = cv::aruco::GridBoard::create(1, 1, marker_size_, marker_size_ * 0.02f, dict_);
 
         loadCalibration();
 
