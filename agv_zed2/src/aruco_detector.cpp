@@ -42,28 +42,55 @@ public:
 
         loadCalibration();
 
-        // Open stereo camera (ZED2 outputs side-by-side in single stream)
-        cap_.open(device_, cv::CAP_V4L2);
-        if (!cap_.isOpened()) {
-            RCLCPP_FATAL(get_logger(), "❌ Cannot open device %s", device_.c_str());
+        // Open left camera (ZED2 on IPC: /dev/video0 = left, /dev/video1 = right)
+        cap_left_.open(device_, cv::CAP_V4L2);
+        if (!cap_left_.isOpened()) {
+            RCLCPP_FATAL(get_logger(), "❌ Cannot open left camera %s", device_.c_str());
+            RCLCPP_FATAL(get_logger(), "💡 Tip: Check if device is busy with: sudo fuser -v %s", device_.c_str());
             rclcpp::shutdown();
             return;
         }
 
-        // Set YUYV format explicitly (30 FPS cho IPC)
-        cap_.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('Y','U','Y','V'));
-        cap_.set(cv::CAP_PROP_FRAME_WIDTH, stereo_width_);
-        cap_.set(cv::CAP_PROP_FRAME_HEIGHT, img_height_);
-        cap_.set(cv::CAP_PROP_FPS, target_fps_);
-        cap_.set(cv::CAP_PROP_BUFFERSIZE, 1);  // Buffer nhỏ để giảm latency
+        // Set format for left camera
+        cap_left_.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('Y','U','Y','V'));
+        cap_left_.set(cv::CAP_PROP_FRAME_WIDTH, img_width_);   // 672
+        cap_left_.set(cv::CAP_PROP_FRAME_HEIGHT, img_height_); // 376
+        cap_left_.set(cv::CAP_PROP_FPS, target_fps_);
+        cap_left_.set(cv::CAP_PROP_BUFFERSIZE, 1);
 
-        // Verify settings
-        int actual_w = cap_.get(cv::CAP_PROP_FRAME_WIDTH);
-        int actual_h = cap_.get(cv::CAP_PROP_FRAME_HEIGHT);
-        int actual_fps = cap_.get(cv::CAP_PROP_FPS);
+        int actual_w_l = cap_left_.get(cv::CAP_PROP_FRAME_WIDTH);
+        int actual_h_l = cap_left_.get(cv::CAP_PROP_FRAME_HEIGHT);
+        int actual_fps_l = cap_left_.get(cv::CAP_PROP_FPS);
         
-        RCLCPP_INFO(get_logger(), "📸 ZED2 Stereo opened: %dx%d @ %d FPS (stereo mode: %s)", 
-                    actual_w, actual_h, actual_fps, use_stereo_ ? "ON" : "OFF");
+        RCLCPP_INFO(get_logger(), "📸 Left camera opened: %dx%d @ %d FPS", 
+                    actual_w_l, actual_h_l, actual_fps_l);
+
+        // Open right camera if stereo mode
+        if (use_stereo_) {
+            std::string right_device = "/dev/video1";  // Right camera always video1
+            cap_right_.open(right_device, cv::CAP_V4L2);
+            if (!cap_right_.isOpened()) {
+                RCLCPP_WARN(get_logger(), "⚠️  Cannot open right camera %s, using mono mode", right_device.c_str());
+                RCLCPP_WARN(get_logger(), "💡 Tip: Check if device is busy with: sudo fuser -v %s", right_device.c_str());
+                use_stereo_ = false;
+            } else {
+                // Set format for right camera
+                cap_right_.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('Y','U','Y','V'));
+                cap_right_.set(cv::CAP_PROP_FRAME_WIDTH, img_width_);
+                cap_right_.set(cv::CAP_PROP_FRAME_HEIGHT, img_height_);
+                cap_right_.set(cv::CAP_PROP_FPS, target_fps_);
+                cap_right_.set(cv::CAP_PROP_BUFFERSIZE, 1);
+
+                int actual_w_r = cap_right_.get(cv::CAP_PROP_FRAME_WIDTH);
+                int actual_h_r = cap_right_.get(cv::CAP_PROP_FRAME_HEIGHT);
+                int actual_fps_r = cap_right_.get(cv::CAP_PROP_FPS);
+                
+                RCLCPP_INFO(get_logger(), "📸 Right camera opened: %dx%d @ %d FPS", 
+                            actual_w_r, actual_h_r, actual_fps_r);
+            }
+        }
+        
+        RCLCPP_INFO(get_logger(), "✅ ZED2 ready (stereo mode: %s)", use_stereo_ ? "ON" : "OFF");
 
         pub_detections_ = create_publisher<std_msgs::msg::Float32MultiArray>("/aruco/detections", 10);
 
@@ -151,18 +178,29 @@ private:
     }
 
     void processFrame() {
-        cv::Mat img;
-        cap_ >> img;
-        if (img.empty()) return;
+        // Capture from left camera
+        cv::Mat img_left;
+        cap_left_ >> img_left;
+        if (img_left.empty()) return;
 
         // Convert YUYV to grayscale directly (tránh BGR intermediate)
-        cv::Mat gray_full;
-        cv::cvtColor(img, gray_full, cv::COLOR_YUV2GRAY_YUYV);
+        cv::Mat left_gray_raw;
+        cv::cvtColor(img_left, left_gray_raw, cv::COLOR_YUV2GRAY_YUYV);
 
         if (use_stereo_) {
-            // Split side-by-side stereo grayscale
-            cv::Mat left_gray_raw = gray_full(cv::Rect(0, 0, img_width_, img_height_));
-            cv::Mat right_gray_raw = gray_full(cv::Rect(img_width_, 0, img_width_, img_height_));
+            // Capture from right camera
+            cv::Mat img_right;
+            cap_right_ >> img_right;
+            if (img_right.empty()) {
+                // Right camera failed, fallback to mono
+                cv::Mat left_gray;
+                cv::remap(left_gray_raw, left_gray, map1x_, map1y_, cv::INTER_LINEAR);
+                detectAruco(left_gray);
+                return;
+            }
+
+            cv::Mat right_gray_raw;
+            cv::cvtColor(img_right, right_gray_raw, cv::COLOR_YUV2GRAY_YUYV);
 
             // Rectify both images
             cv::Mat left_gray, right_gray;
@@ -174,7 +212,6 @@ private:
         }
         else {
             // Mono mode: use left camera only
-            cv::Mat left_gray_raw = gray_full(cv::Rect(0, 0, img_width_, img_height_));
             cv::Mat left_gray;
             cv::remap(left_gray_raw, left_gray, map1x_, map1y_, cv::INTER_LINEAR);
             detectAruco(left_gray);
@@ -356,7 +393,8 @@ private:
     cv::Ptr<cv::aruco::DetectorParameters> params_;
     cv::Ptr<cv::aruco::GridBoard> board_;
     cv::Mat K_, D_;  // Keep for backward compatibility (will point to K_left_, D_left_)
-    cv::VideoCapture cap_;
+    cv::VideoCapture cap_left_;   // Left camera /dev/video0
+    cv::VideoCapture cap_right_;  // Right camera /dev/video1
     
     // Stereo camera parameters
     cv::Mat K_left_, D_left_, K_right_, D_right_;
