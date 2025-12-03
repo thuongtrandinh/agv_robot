@@ -12,6 +12,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
@@ -35,6 +36,7 @@ add_executable(aruco_detector src/aruco_detector.cpp)
 ament_target_dependencies(aruco_detector
   rclcpp
   sensor_msgs
+  std_msgs
   geometry_msgs
   visualization_msgs
   cv_bridge
@@ -42,6 +44,7 @@ ament_target_dependencies(aruco_detector
   tf2_ros
   tf2_geometry_msgs
   OpenCV
+  ament_index_cpp
 )
 
 target_link_libraries(aruco_detector
@@ -123,6 +126,7 @@ endif()
 ament_export_dependencies(
   rclcpp
   sensor_msgs
+  std_msgs
   geometry_msgs
   visualization_msgs
   cv_bridge
