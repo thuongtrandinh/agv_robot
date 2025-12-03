@@ -61,9 +61,17 @@ public:
         int actual_w = cap_left_.get(cv::CAP_PROP_FRAME_WIDTH);
         int actual_h = cap_left_.get(cv::CAP_PROP_FRAME_HEIGHT);
         int actual_fps = cap_left_.get(cv::CAP_PROP_FPS);
+        int actual_fourcc = cap_left_.get(cv::CAP_PROP_FOURCC);
         
-        RCLCPP_INFO(get_logger(), "📸 ZED2 opened: %dx%d @ %d FPS", 
-                    actual_w, actual_h, actual_fps);
+        // Decode FOURCC
+        char fourcc_str[5] = {0};
+        fourcc_str[0] = (actual_fourcc & 0xFF);
+        fourcc_str[1] = ((actual_fourcc >> 8) & 0xFF);
+        fourcc_str[2] = ((actual_fourcc >> 16) & 0xFF);
+        fourcc_str[3] = ((actual_fourcc >> 24) & 0xFF);
+        
+        RCLCPP_INFO(get_logger(), "📸 ZED2 opened: %dx%d @ %d FPS, format: %s", 
+                    actual_w, actual_h, actual_fps, fourcc_str);
         
         // Check if we got side-by-side stereo (1344×376)
         if (actual_w == stereo_width_ && use_stereo_) {
@@ -164,19 +172,31 @@ private:
     }
 
     void processFrame() {
-        // Capture stereo frame (side-by-side)
-        cv::Mat img_stereo;
-        cap_left_ >> img_stereo;
-        if (img_stereo.empty()) return;
+        // Capture frame
+        cv::Mat img_raw;
+        cap_left_ >> img_raw;
+        if (img_raw.empty()) return;
 
-        if (use_stereo_ && img_stereo.cols == stereo_width_) {
-            // Convert full YUYV stereo frame to grayscale (1344×376 YUYV → 1344×376 Gray)
-            cv::Mat stereo_gray_raw;
-            cv::cvtColor(img_stereo, stereo_gray_raw, cv::COLOR_YUV2GRAY_YUYV);
+        // Convert to grayscale (auto-detect format)
+        cv::Mat gray_raw;
+        if (img_raw.channels() == 1) {
+            // Already grayscale
+            gray_raw = img_raw;
+        } else if (img_raw.channels() == 2) {
+            // YUYV format (2-channel packed)
+            cv::cvtColor(img_raw, gray_raw, cv::COLOR_YUV2GRAY_YUYV);
+        } else if (img_raw.channels() == 3) {
+            // BGR format
+            cv::cvtColor(img_raw, gray_raw, cv::COLOR_BGR2GRAY);
+        } else {
+            RCLCPP_ERROR(get_logger(), "Unsupported image format: %d channels", img_raw.channels());
+            return;
+        }
 
+        if (use_stereo_ && gray_raw.cols == stereo_width_) {
             // Split grayscale stereo into left and right (1344×376 → 2 × 672×376)
-            cv::Mat left_gray_raw = stereo_gray_raw(cv::Rect(0, 0, img_width_, img_height_));
-            cv::Mat right_gray_raw = stereo_gray_raw(cv::Rect(img_width_, 0, img_width_, img_height_));
+            cv::Mat left_gray_raw = gray_raw(cv::Rect(0, 0, img_width_, img_height_));
+            cv::Mat right_gray_raw = gray_raw(cv::Rect(img_width_, 0, img_width_, img_height_));
 
             // Rectify both images
             cv::Mat left_gray, right_gray;
@@ -187,10 +207,7 @@ private:
             detectArucoStereo(left_gray, right_gray);
         }
         else {
-            // Mono mode: convert full frame then use left half
-            cv::Mat gray_raw;
-            cv::cvtColor(img_stereo, gray_raw, cv::COLOR_YUV2GRAY_YUYV);
-
+            // Mono mode: use left half if stereo width, otherwise full frame
             cv::Mat left_gray_raw;
             if (gray_raw.cols == stereo_width_) {
                 left_gray_raw = gray_raw(cv::Rect(0, 0, img_width_, img_height_));
