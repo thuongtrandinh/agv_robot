@@ -170,14 +170,13 @@ private:
         if (img_stereo.empty()) return;
 
         if (use_stereo_ && img_stereo.cols == stereo_width_) {
-            // Split side-by-side stereo (1344×376 → 2 × 672×376)
-            cv::Mat img_left = img_stereo(cv::Rect(0, 0, img_width_, img_height_));
-            cv::Mat img_right = img_stereo(cv::Rect(img_width_, 0, img_width_, img_height_));
+            // Convert full YUYV stereo frame to grayscale (1344×376 YUYV → 1344×376 Gray)
+            cv::Mat stereo_gray_raw;
+            cv::cvtColor(img_stereo, stereo_gray_raw, cv::COLOR_YUV2GRAY_YUYV);
 
-            // Convert YUYV to grayscale directly
-            cv::Mat left_gray_raw, right_gray_raw;
-            cv::cvtColor(img_left, left_gray_raw, cv::COLOR_YUV2GRAY_YUYV);
-            cv::cvtColor(img_right, right_gray_raw, cv::COLOR_YUV2GRAY_YUYV);
+            // Split grayscale stereo into left and right (1344×376 → 2 × 672×376)
+            cv::Mat left_gray_raw = stereo_gray_raw(cv::Rect(0, 0, img_width_, img_height_));
+            cv::Mat right_gray_raw = stereo_gray_raw(cv::Rect(img_width_, 0, img_width_, img_height_));
 
             // Rectify both images
             cv::Mat left_gray, right_gray;
@@ -188,16 +187,16 @@ private:
             detectArucoStereo(left_gray, right_gray);
         }
         else {
-            // Mono mode: use left half only or full frame
-            cv::Mat img_left;
-            if (img_stereo.cols == stereo_width_) {
-                img_left = img_stereo(cv::Rect(0, 0, img_width_, img_height_));
-            } else {
-                img_left = img_stereo;
-            }
+            // Mono mode: convert full frame then use left half
+            cv::Mat gray_raw;
+            cv::cvtColor(img_stereo, gray_raw, cv::COLOR_YUV2GRAY_YUYV);
 
             cv::Mat left_gray_raw;
-            cv::cvtColor(img_left, left_gray_raw, cv::COLOR_YUV2GRAY_YUYV);
+            if (gray_raw.cols == stereo_width_) {
+                left_gray_raw = gray_raw(cv::Rect(0, 0, img_width_, img_height_));
+            } else {
+                left_gray_raw = gray_raw;
+            }
 
             cv::Mat left_gray;
             cv::remap(left_gray_raw, left_gray, map1x_, map1y_, cv::INTER_LINEAR);
