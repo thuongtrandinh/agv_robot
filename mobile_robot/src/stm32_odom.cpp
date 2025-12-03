@@ -21,6 +21,12 @@ public:
     // 🔥 NEW PARAMETER: GYRO SCALE FACTOR
     // Đã tính toán từ thực nghiệm: 90 / 86 = 1.046. Nhân với hệ số cũ 1.274 -> 1.333
     this->declare_parameter<double>("gyro_scale_factor", 1.07); 
+    
+    // 🔥 IMU FILTERING PARAMETERS
+    this->declare_parameter<double>("gyro_threshold", 0.001);  // rad/s - dưới ngưỡng này = 0
+    this->declare_parameter<double>("velocity_threshold", 0.005);  // m/s - dưới ngưỡng này = đứng yên
+    this->declare_parameter<double>("gyro_bias_z", 0.0);  // bias offset cho gyro_z (đo khi tĩnh)
+    this->declare_parameter<double>("gyro_alpha", 0.7);  // low-pass filter (0.7 = ưu tiên giá trị cũ)
 
     // Topics
     this->declare_parameter<std::string>("sensor_data_topic", "/sensor_data");
@@ -33,10 +39,18 @@ public:
     wheel_radius_ = this->get_parameter("wheel_radius").as_double();
     wheel_separation_ = this->get_parameter("wheel_separation").as_double();
     gyro_scale_factor_ = this->get_parameter("gyro_scale_factor").as_double();
+    gyro_threshold_ = this->get_parameter("gyro_threshold").as_double();
+    velocity_threshold_ = this->get_parameter("velocity_threshold").as_double();
+    gyro_bias_z_ = this->get_parameter("gyro_bias_z").as_double();
+    gyro_alpha_ = this->get_parameter("gyro_alpha").as_double();
 
     double pub_rate = this->get_parameter("odom_publish_rate").as_double();
     odom_publish_period_ = rclcpp::Duration::from_seconds(1.0 / pub_rate);
     last_pub_time_ = this->now();
+    
+    // Initialize filtered values
+    gyro_z_filtered_ = 0.0;
+    vx_filtered_ = 0.0;
 
     // Strings
     std::string sensor_topic = this->get_parameter("sensor_data_topic").as_string();
@@ -83,27 +97,45 @@ private:
     double dt = (now - last_time_).seconds();
     if (dt <= 0.0 || dt > 0.5) { last_time_ = now; return; }
 
+    // 🔥 STEP 1: Bias Compensation
+    gyro_z -= gyro_bias_z_;
+    
+    // 🔥 STEP 2: Low-pass filter cho gyro (giảm noise)
+    gyro_z_filtered_ = gyro_alpha_ * gyro_z_filtered_ + (1.0 - gyro_alpha_) * gyro_z;
+    
+    // 🔥 STEP 3: Threshold - nếu quá nhỏ thì coi như 0
+    if (std::abs(gyro_z_filtered_) < gyro_threshold_) {
+        gyro_z_filtered_ = 0.0;
+    }
+    
     // 2. Logic Calculation
     double vx = 0.0;
     double vtheta_fused = 0.0;
-    bool is_stationary = (std::abs(v_right) < 0.005) && (std::abs(v_left) < 0.005);
+    bool is_stationary = (std::abs(v_right) < velocity_threshold_) && 
+                         (std::abs(v_left) < velocity_threshold_);
 
     if (is_stationary) {
         vx = 0.0;
         vtheta_fused = 0.0; 
-        // Zero IMU drift when stationary
-        gyro_z = 0.0; gyro_x = 0.0; gyro_y = 0.0;
+        // Zero all gyro when stationary
+        gyro_x = 0.0; 
+        gyro_y = 0.0; 
+        gyro_z = 0.0;
+        gyro_z_filtered_ = 0.0;  // Reset filter
+        vx_filtered_ = 0.0;
     } else {
         vx = (v_right + v_left) / 2.0;
         
-        // 🔥 APPLY SCALE FACTOR HERE
-        // Nhân hệ số bù để sửa lỗi thiếu góc (Under-steering)
-        double gyro_z_corrected = gyro_z * gyro_scale_factor_;
+        // 🔥 Low-pass filter cho velocity
+        vx_filtered_ = gyro_alpha_ * vx_filtered_ + (1.0 - gyro_alpha_) * vx;
         
-        // Use 100% Gyro
+        // 🔥 APPLY SCALE FACTOR to filtered gyro
+        double gyro_z_corrected = gyro_z_filtered_ * gyro_scale_factor_;
+        
+        // Use scaled & filtered Gyro
         vtheta_fused = gyro_z_corrected; 
         
-        // Update raw gyro variable for IMU publishing too (consistency)
+        // Update for IMU publishing (use filtered and scaled)
         gyro_z = gyro_z_corrected;
     }
 
@@ -139,15 +171,15 @@ private:
         odom.pose.pose.orientation.z = q.z();
         odom.pose.pose.orientation.w = q.w();
 
-        odom.twist.twist.linear.x = vx;
+        odom.twist.twist.linear.x = vx_filtered_;  // Use filtered velocity
         odom.twist.twist.angular.z = vtheta_fused;
 
-        // Covariance - Rất thấp vì đã scale gyro chính xác
-        odom.pose.covariance[0] = 0.0001;  // x position variance
-        odom.pose.covariance[7] = 0.0001;  // y position variance  
-        odom.pose.covariance[35] = 0.0001; // yaw variance
-        odom.twist.covariance[0] = 0.0001; // vx variance
-        odom.twist.covariance[35] = 0.0001; // vyaw variance
+        // Covariance - Realistic values after filtering
+        odom.pose.covariance[0] = 0.001;   // x position variance (tăng lên do filter)
+        odom.pose.covariance[7] = 0.001;   // y position variance  
+        odom.pose.covariance[35] = 0.005;  // yaw variance (IMU noise ~0.001 rad/s)
+        odom.twist.covariance[0] = 0.001;  // vx variance
+        odom.twist.covariance[35] = 0.01;  // vyaw variance (gyro noise)
 
         odom_pub_->publish(odom);
 
@@ -174,9 +206,10 @@ private:
         imu_msg.linear_acceleration.y = acc_y;
         imu_msg.linear_acceleration.z = acc_z;
         
-        imu_msg.orientation_covariance[8] = 0.001;
-        imu_msg.angular_velocity_covariance[8] = 0.001;
-        imu_msg.linear_acceleration_covariance[0] = 0.01;
+        // Covariance phản ánh IMU noise thực tế
+        imu_msg.orientation_covariance[8] = 0.005;   // yaw orientation
+        imu_msg.angular_velocity_covariance[8] = 0.01;  // gyro_z noise ~0.001-0.003 rad/s
+        imu_msg.linear_acceleration_covariance[0] = 0.05;  // acc noise ~0.03 m/s²
 
         imu_pub_->publish(imu_msg);
 
@@ -187,6 +220,8 @@ private:
 
   // Members
   double wheel_radius_, wheel_separation_, gyro_scale_factor_;
+  double gyro_threshold_, velocity_threshold_, gyro_bias_z_, gyro_alpha_;
+  double gyro_z_filtered_, vx_filtered_;  // Filtered values
   double x_, y_, yaw_;
   rclcpp::Time last_time_, last_pub_time_;
   rclcpp::Duration odom_publish_period_{rclcpp::Duration::from_seconds(0.0)};
