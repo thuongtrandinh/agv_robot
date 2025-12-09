@@ -1,10 +1,12 @@
 ekf_global_node:
   ros__parameters:
     use_sim_time: false
-    frequency: 15.0
+    frequency: 20.0  # Tăng lên 20Hz cho mượt hơn
     sensor_timeout: 0.2
     two_d_mode: true
     publish_tf: true
+    smooth_lagged_data: true  # Smooth delayed sensor data
+    history_length: 0.5  # Keep 0.5s history for smoothing
     
     map_frame: map
     odom_frame: odom
@@ -21,7 +23,10 @@ ekf_global_node:
     pose0: /amcl_pose
     pose0_config: [true, true, false, false, false, true, false, false, false, false, false, false, false, false, false]
     pose0_differential: false
-    pose0_queue_size: 2
+    pose0_queue_size: 10  # TĂNG để smooth AMCL updates
+    pose0_rejection_threshold: 3.0  # Chặt hơn để reject outliers khi particles spread
+    pose0_relative: false  # Absolute measurement từ AMCL
+    pose0_mahalanobis_thresh: 5.0  # Thêm Mahalanobis distance check
 
     # --- Process Noise Covariance ---
     process_noise_covariance: [0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,

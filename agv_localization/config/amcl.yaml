@@ -8,44 +8,46 @@ amcl:
     base_frame_id: "base_footprint"
 
     # --- CẤU HÌNH QUAN TRỌNG CHO FUSION ---
-    tf_broadcast: true       # BẬT cho standalone test (set false khi dùng với EKF Global)
-    set_pose_callback: true  # BẬT: Để gửi dữ liệu cho EKF Global đọc
+    tf_broadcast: false      # TẮT: Để EKF Global xử lý TF map→odom
+    set_initial_pose: true   # Cho phép set pose ban đầu
+    always_reset_initial_pose: false  # Không reset mỗi lần restart
 
-    # 1. ODOMETRY MODEL (Tin odometry cao vì đã scale gyro)
+    # 1. ODOMETRY MODEL (Noise vừa phải để particles ổn định)
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
-    alpha1: 0.005  # Rất thấp - odometry đã scale chính xác
-    alpha2: 0.005  # Tin rotation->translation
-    alpha3: 0.008  # Translation noise thấp
-    alpha4: 0.005  # Translation->rotation tin cậy
-    alpha5: 0.001  # Strafe gần 0
+    alpha1: 0.02   # Giảm để particles hội tụ ổn định hơn
+    alpha2: 0.02   # Rotation noise vừa phải
+    alpha3: 0.03   # Translation noise vừa phải
+    alpha4: 0.02   # Giảm để không spread quá
+    alpha5: 0.01   # Strafe noise
 
-    # 2. NGƯỠNG CẬP NHẬT (Update thường xuyên để laser correction kịp thời)
-    update_min_d: 0.15  # Giảm để update nhanh hơn - chống trôi
-    update_min_a: 0.15  # Update khi quay nhẹ
-    resample_interval: 1  # Resample mỗi update để laser có tác dụng
+    # 2. NGƯỠNG CẬP NHẬT (TĂNG cao để CHỈ update khi robot THẬT SỰ di chuyển)
+    update_min_d: 0.30  # Update mỗi 30cm - tránh update khi dừng
+    update_min_a: 0.50  # Update khi quay ~29 độ
+    resample_interval: 4  # Resample mỗi 4 update để particles hội tụ rất chặt
 
-    # 3. LASER MODEL (Tin laser cao để chống trôi tích lũy)
+    # 3. LASER MODEL (Tin laser CỰC CAO để ép particles về đúng vị trí)
     laser_model_type: "likelihood_field"
     laser_max_range: 12.0
     laser_min_range: 0.15
-    max_beams: 80     # Tăng để matching chính xác hơn
-    z_hit: 0.85       # Tin laser rất cao
-    z_rand: 0.10      # Giảm random noise
-    sigma_hit: 0.15   # Matching chặt chẽ
-    z_short: 0.03
-    z_max: 0.02
+    max_beams: 120    # Tăng lên để matching mạnh hơn
+    z_hit: 0.95       # Tin laser CỰC CAO (95%)
+    z_rand: 0.03      # Giảm random xuống còn 3%
+    sigma_hit: 0.10   # Matching chặt chẽ hơn
+    z_short: 0.01     # Giảm short reading
+    z_max: 0.01       # Giảm max reading
     lambda_short: 0.1
-    laser_likelihood_max_dist: 3.0
+    laser_likelihood_max_dist: 2.0  # Giảm để matching chính xác hơn
 
-    # 4. PARTICLES (Vừa phải - odometry tốt nên không cần nhiều)
-    max_particles: 3000
-    min_particles: 1000
-    pf_err: 0.02      # Spatial error thấp
+    # 4. PARTICLES (Giảm để hội tụ nhanh hơn)
+    max_particles: 3000  # Giảm để xử lý nhanh hơn
+    min_particles: 1000  # Đủ để localize
+    pf_err: 0.03      # Giảm để hội tụ chặt chẽ hơn
     pf_z: 0.99
-    recovery_alpha_slow: 0.0001  # Recovery chậm - tin odometry
-    recovery_alpha_fast: 0.02
+    recovery_alpha_slow: 0.0005   # Recovery từ từ để ổn định
+    recovery_alpha_fast: 0.05     # Recovery vừa phải
     
     # Misc
     transform_tolerance: 0.5  # Chặt chẽ
-    set_initial_pose: true
     initial_pose: {x: 0.0, y: 0.0, z: 0.0, yaw: 0.0}
+    first_map_only: false  # Cho phép relocation
+    save_pose_rate: 2.0  # Lưu pose mỗi 2s để recovery
