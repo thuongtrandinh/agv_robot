@@ -52,7 +52,7 @@
   </gazebo>
 
     <!-- LIDAR sensor cho Gazebo Fortress -->
-    <gazebo reference="laser">
+    <!-- <gazebo reference="laser">
         <sensor name="laser" type="gpu_ray">
             <gz_frame_id>laser</gz_frame_id>
             <always_on>true</always_on>
@@ -86,7 +86,7 @@
             name="ignition::gazebo::systems::Sensors">
         <render_engine>ogre2</render_engine>
     </plugin>
-    </gazebo>
+    </gazebo> -->
     
     <!-- IMU -->
   <gazebo reference="imu_link">

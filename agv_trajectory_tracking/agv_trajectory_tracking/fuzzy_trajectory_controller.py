@@ -155,54 +155,121 @@ class FuzzyTrajectoryController(Node):
         self.stop_robot()
     
     def setup_fuzzy_system(self):
-        """Setup fuzzy membership functions and rules"""
-        # 🔧 IMPROVED v2: Even tighter distance MFs for aggressive tracking
-        # More responsive to small errors
+        """Setup fuzzy membership functions and rules
+        
+        🎯 FULL FUZZY SYSTEM:
+        - 2 Inputs: e_d (distance error), e_theta (angle error)
+        - 2 Outputs: v (linear velocity), ω (angular velocity)
+        - Rule base: 5 x 7 = 35 rules
+        """
+        
+        # ============================================
+        # INPUT 1: e_d (Distance Error) - 5 MFs
+        # ============================================
         self.e_d_mf = {
-            'VS': ('trap', [0, 0, 0.5, 0.8]),      # Very Small: 0-0.5m
-            'S': ('tri', [0.5, 0.8, 1.2]),         # Small: 0.2-1.2m
-            'M': ('tri', [0.8, 1.2, 1.5]),         # Medium: 0.6-2.5m
-            'B': ('tri', [1.2, 1.5, 3.0]),         # Big: 1.5-4.5m
-            'VB': ('trap', [1.5, 3.0, 10, 20]),    # Very Big: >3.0m
+            'VS': ('trap', [0, 0, 0.1, 0.2]),       # Very Small: 0-0.2m
+            'S':  ('tri', [0.1, 0.25, 0.4]),        # Small: 0.1-0.4m
+            'M':  ('tri', [0.3, 0.5, 0.8]),         # Medium: 0.3-0.8m
+            'B':  ('tri', [0.6, 1.0, 1.5]),         # Big: 0.6-1.5m
+            'VB': ('trap', [1.2, 1.8, 10, 20]),     # Very Big: >1.2m
         }
         
-        # 🔧 TUNED v5: BALANCED angle thresholds for all trajectory types
-        # Works well for sharp corners (Square) and smooth curves (Figure-8)
+        # ============================================
+        # INPUT 2: e_theta (Angle Error) - 7 MFs
+        # ============================================
         self.e_theta_mf = {
-            'NB': ('trap', [-180, -180, -30, -15]),  # Negative Big: <-40° - wider range
-            'NM': ('tri', [-30, -15, -5]),          # Negative Medium: -60 to -18°
-            'NS': ('tri', [-15, -5, -3]),           # Negative Small: -28 to -4°
-            'ZE': ('tri', [-3, 0, 3]),               # Zero: -6 to 6° - balanced tolerance
-            'PS': ('tri', [3, 5, 15]),              # Positive Small: 4 to 28°
-            'PM': ('tri', [5, 15, 30]),             # Positive Medium: 18 to 60°
-            'PB': ('trap', [15, 30, 180, 180])       # Positive Big: >40° - wider range
+            'NB': ('trap', [-180, -180, -45, -25]), # Negative Big: < -25°
+            'NM': ('tri', [-40, -20, -8]),          # Negative Medium: -40 to -8°
+            'NS': ('tri', [-15, -5, 0]),            # Negative Small: -15 to 0°
+            'ZE': ('tri', [-5, 0, 5]),              # Zero: -5 to 5°
+            'PS': ('tri', [0, 5, 15]),              # Positive Small: 0 to 15°
+            'PM': ('tri', [8, 20, 40]),             # Positive Medium: 8 to 40°
+            'PB': ('trap', [25, 45, 180, 180])      # Positive Big: > 25°
         }
         
-        # 🔧 TUNED v11: SMOOTH angular velocity for Figure-8
-        # Lower values for smoother curves, boosted by 1.4x in corner mode if needed
+        # ============================================
+        # OUTPUT 1: Linear Velocity (v) - Sugeno constants
+        # ============================================
+        self.linear_vel_constants = {
+            'STOP':  0.0,    # Stop
+            'VS':    0.08,   # Very Slow
+            'S':     0.15,   # Slow
+            'M':     0.25,   # Medium
+            'F':     0.32,   # Fast
+            'VF':    0.38,   # Very Fast
+        }
+        
+        # ============================================
+        # OUTPUT 2: Angular Velocity (ω) - Sugeno constants
+        # ============================================
         self.angular_vel_constants = {
-            'NB': -1.2,    # Turn VERY hard left - max for 90° corners
-            'NM': -0.9,    # Turn medium-strong left
-            'NS': -0.5,    # Turn soft left
-            'Z': 0.0,      # Straight
-            'PS': 0.5,     # Turn soft right
-            'PM': 0.9,     # Turn medium-strong right
-            'PB': 1.2,     # Turn VERY hard right - max for 90° corners
+            'NB': -1.2,    # Turn hard left
+            'NM': -0.8,    # Turn medium left
+            'NS': -0.4,    # Turn soft left
+            'Z':   0.0,    # Straight
+            'PS':  0.4,    # Turn soft right
+            'PM':  0.8,    # Turn medium right
+            'PB':  1.2,    # Turn hard right
         }
         
-        # 🚀 NEW: Fuzzy rule table for angular velocity based on angle error ONLY
-        # Distance affects linear velocity separately
-        self.angular_rules = {
-            'NB': 'NB',  # Very negative angle → Turn hard left
-            'NM': 'NM',  # Medium negative → Turn medium left
-            'NS': 'NS',  # Small negative → Turn soft left
-            'ZE': 'Z',   # Zero angle → Straight
-            'PS': 'PS',  # Small positive → Turn soft right
-            'PM': 'PM',  # Medium positive → Turn medium right
-            'PB': 'PB',  # Very positive → Turn hard right
+        # ============================================
+        # RULE BASE: 35 rules (5 e_d × 7 e_theta)
+        # Format: (e_d, e_theta) -> (v, omega)
+        # ============================================
+        # Rule table for LINEAR VELOCITY (v)
+        # Rows: e_d (VS, S, M, B, VB)
+        # Cols: e_theta (NB, NM, NS, ZE, PS, PM, PB)
+        self.v_rules = {
+            # e_d=VS (very close to path)
+            ('VS', 'NB'): 'STOP', ('VS', 'NM'): 'VS',  ('VS', 'NS'): 'S',
+            ('VS', 'ZE'): 'M',    ('VS', 'PS'): 'S',   ('VS', 'PM'): 'VS',  ('VS', 'PB'): 'STOP',
+            
+            # e_d=S (small distance)
+            ('S', 'NB'): 'VS',   ('S', 'NM'): 'S',    ('S', 'NS'): 'M',
+            ('S', 'ZE'): 'F',    ('S', 'PS'): 'M',    ('S', 'PM'): 'S',    ('S', 'PB'): 'VS',
+            
+            # e_d=M (medium distance)
+            ('M', 'NB'): 'S',    ('M', 'NM'): 'M',    ('M', 'NS'): 'F',
+            ('M', 'ZE'): 'VF',   ('M', 'PS'): 'F',    ('M', 'PM'): 'M',    ('M', 'PB'): 'S',
+            
+            # e_d=B (big distance)
+            ('B', 'NB'): 'M',    ('B', 'NM'): 'F',    ('B', 'NS'): 'VF',
+            ('B', 'ZE'): 'VF',   ('B', 'PS'): 'VF',   ('B', 'PM'): 'F',    ('B', 'PB'): 'M',
+            
+            # e_d=VB (very big distance)
+            ('VB', 'NB'): 'M',   ('VB', 'NM'): 'F',   ('VB', 'NS'): 'VF',
+            ('VB', 'ZE'): 'VF',  ('VB', 'PS'): 'VF',  ('VB', 'PM'): 'F',   ('VB', 'PB'): 'M',
         }
         
-        self.get_logger().info(f'Fuzzy system initialized with {len(self.angular_rules)} angular rules')
+        # Rule table for ANGULAR VELOCITY (ω)
+        # Rows: e_d (VS, S, M, B, VB)  
+        # Cols: e_theta (NB, NM, NS, ZE, PS, PM, PB)
+        self.omega_rules = {
+            # e_d=VS (very close - rotate in place if needed)
+            ('VS', 'NB'): 'NB', ('VS', 'NM'): 'NM', ('VS', 'NS'): 'NS',
+            ('VS', 'ZE'): 'Z',  ('VS', 'PS'): 'PS', ('VS', 'PM'): 'PM', ('VS', 'PB'): 'PB',
+            
+            # e_d=S (small distance - moderate turning)
+            ('S', 'NB'): 'NB',  ('S', 'NM'): 'NM',  ('S', 'NS'): 'NS',
+            ('S', 'ZE'): 'Z',   ('S', 'PS'): 'PS',  ('S', 'PM'): 'PM',  ('S', 'PB'): 'PB',
+            
+            # e_d=M (medium distance - balanced turning)
+            ('M', 'NB'): 'NB',  ('M', 'NM'): 'NM',  ('M', 'NS'): 'NS',
+            ('M', 'ZE'): 'Z',   ('M', 'PS'): 'PS',  ('M', 'PM'): 'PM',  ('M', 'PB'): 'PB',
+            
+            # e_d=B (big distance - softer turning while moving fast)
+            ('B', 'NB'): 'NM',  ('B', 'NM'): 'NM',  ('B', 'NS'): 'NS',
+            ('B', 'ZE'): 'Z',   ('B', 'PS'): 'PS',  ('B', 'PM'): 'PM',  ('B', 'PB'): 'PM',
+            
+            # e_d=VB (very big - focus on catching up, moderate turning)
+            ('VB', 'NB'): 'NM', ('VB', 'NM'): 'NS', ('VB', 'NS'): 'NS',
+            ('VB', 'ZE'): 'Z',  ('VB', 'PS'): 'PS', ('VB', 'PM'): 'PS', ('VB', 'PB'): 'PM',
+        }
+        
+        self.get_logger().info(f'✅ Fuzzy system initialized:')
+        self.get_logger().info(f'   - Inputs: e_d (5 MFs), e_theta (7 MFs)')
+        self.get_logger().info(f'   - Outputs: v (6 levels), ω (7 levels)')
+        self.get_logger().info(f'   - Rules: {len(self.v_rules)} for v, {len(self.omega_rules)} for ω')
     
     def fuzzify(self, value, mf_dict):
         """Compute membership degrees for a crisp value"""
@@ -215,87 +282,70 @@ class FuzzyTrajectoryController(Node):
         return memberships
     
     def fuzzy_inference(self, e_d, e_theta_deg):
-        """Apply fuzzy inference using simplified Sugeno method
+        """Apply fuzzy inference using Sugeno method
         
-        🚀 NEW APPROACH:
-        - Angular velocity (ω) controlled by fuzzy logic based on angle error
-        - Linear velocity (v) controlled by proportional gain based on distance
-        - This decoupling simplifies control and improves stability
+        🎯 FULL 2-INPUT 2-OUTPUT FUZZY SYSTEM:
+        - Inputs: e_d (distance error), e_theta (angle error)
+        - Outputs: v (linear velocity), ω (angular velocity)
+        - Method: Weighted average (Sugeno)
+        
+        Steps:
+        1. Fuzzify both inputs
+        2. Apply rules using AND (min) operator
+        3. Compute weighted average for each output
         """
-        # Fuzzify angle error for angular velocity control
+        # ============================================
+        # Step 1: FUZZIFY both inputs
+        # ============================================
+        e_d_fuzz = self.fuzzify(e_d, self.e_d_mf)
         e_theta_fuzz = self.fuzzify(e_theta_deg, self.e_theta_mf)
         
-        # Compute angular velocity using fuzzy rules
+        # ============================================
+        # Step 2 & 3: Apply rules and compute outputs
+        # ============================================
+        v_numerator = 0.0
+        v_denominator = 0.0
         omega_numerator = 0.0
         omega_denominator = 0.0
         
-        for angle_label, omega_label in self.angular_rules.items():
-            strength = e_theta_fuzz[angle_label]
+        # Iterate through all rules
+        for (d_label, theta_label), v_output_label in self.v_rules.items():
+            # Get membership degrees for both inputs
+            d_strength = e_d_fuzz.get(d_label, 0.0)
+            theta_strength = e_theta_fuzz.get(theta_label, 0.0)
             
-            if strength > 0:
-                omega_output = self.angular_vel_constants[omega_label]
-                omega_numerator += strength * omega_output
-                omega_denominator += strength
+            # AND operator (min) for rule strength
+            rule_strength = min(d_strength, theta_strength)
+            
+            if rule_strength > 0:
+                # Get output values
+                v_output = self.linear_vel_constants[v_output_label]
+                omega_output_label = self.omega_rules[(d_label, theta_label)]
+                omega_output = self.angular_vel_constants[omega_output_label]
+                
+                # Accumulate for weighted average
+                v_numerator += rule_strength * v_output
+                v_denominator += rule_strength
+                omega_numerator += rule_strength * omega_output
+                omega_denominator += rule_strength
         
-        # Final angular velocity (weighted average)
+        # ============================================
+        # Step 4: Defuzzify (weighted average)
+        # ============================================
+        if v_denominator > 0:
+            v = v_numerator / v_denominator
+        else:
+            v = 0.0
+        
         if omega_denominator > 0:
             omega = omega_numerator / omega_denominator
         else:
             omega = 0.0
         
-        # 🚀 TUNED v9: INTELLIGENT corner vs curve detection
-        # Key: Distinguish SHARP CORNERS (Square) from SMOOTH CURVES (Figure-8)
-        
-        abs_angle = abs(e_theta_deg)
-        
-        # 🔥 SMART DETECTION: Sharp corner = high angle + close distance
-        # This prevents false positives on smooth curves
-        is_sharp_corner = (abs_angle > 75 and e_d < 0.4)  # Must be NEAR corner with high angle
-        
-        if is_sharp_corner:
-            # 🎯 SHARP CORNER MODE (Square trajectory)
-            # Stop or crawl forward while rotating at corner
-            if e_d < 0.15:  # Very close to corner point
-                v = 0.08  # Almost stop - just rotate in place
-            elif e_d < 0.30:  # Near corner
-                v = 0.12  # Crawl forward slowly while turning
-            else:  # Approaching corner
-                v = 0.16  # Slow approach to corner
-            
-            # 🔥 BOOST angular velocity for sharp corners
-            omega = omega * 1.4  # Increase rotation speed by 40%
-            
-        else:
-            # 🎯 SMOOTH CURVE MODE (Circle, Figure-8, Straights)
-            # 🔥 v11: CONSTANT velocity strategy for Figure-8 - prioritize smoothness
-            # Use mostly constant speed with minimal angle-based reduction
-            
-            # Base velocity depends on distance - but keep range TIGHT
-            if e_d < 0.10:  # Very close
-                v_base = 0.32
-            elif e_d < 0.25:  # Close to medium - optimal range
-                v_base = 0.33
-            elif e_d < 0.50:  # Medium distance
-                v_base = 0.34
-            else:  # Far - need to catch up a bit
-                v_base = 0.35
-            
-            # 🔧 MINIMAL angle-based reduction - keep velocity smooth
-            # Figure-8 needs consistent speed for smooth tracking
-            if abs_angle < 15:  # Near straight - full speed
-                angle_factor = 1.0
-            elif abs_angle < 35:  # Gentle curve - tiny reduction
-                angle_factor = 0.97
-            elif abs_angle < 55:  # Medium curve - small reduction
-                angle_factor = 0.94
-            elif abs_angle < 70:  # Sharper curve - moderate reduction
-                angle_factor = 0.90
-            else:  # Very sharp curve (but still smooth, not corner)
-                angle_factor = 0.85
-            
-            v = v_base * angle_factor
-        
-        # Clip to limits
+        # ============================================
+        # Step 5: Apply constraints
+        # ============================================
+        # Clip to parameter limits
         v = max(0.0, min(self.max_linear_vel, v))
         omega = max(-self.max_angular_vel, min(self.max_angular_vel, omega))
         
