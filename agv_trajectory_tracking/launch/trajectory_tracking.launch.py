@@ -82,7 +82,6 @@ def generate_launch_description():
     max_linear_vel = LaunchConfiguration('max_linear_vel')
     max_angular_vel = LaunchConfiguration('max_angular_vel')
     trajectory_speed = LaunchConfiguration('trajectory_speed')
-    ramp_time = LaunchConfiguration('ramp_time')
     enable_traj_publish = LaunchConfiguration('enable_traj_publish')
     verbose_logging = LaunchConfiguration('verbose_logging')
     
@@ -102,7 +101,6 @@ def generate_launch_description():
             'preview_time': 10.0,
             'enable_publish': enable_traj_publish,  # Control trajectory publishing
             'trajectory_speed': trajectory_speed,  # Configurable trajectory speed
-            'ramp_time': ramp_time,  # Smooth speed ramping time
         }],
     )
     
@@ -145,7 +143,6 @@ def generate_launch_description():
         max_linear_vel_arg,
         max_angular_vel_arg,
         trajectory_speed_arg,  # New: control trajectory speed
-        ramp_time_arg,  # New: smooth speed ramping
         enable_traj_publish_arg,
         verbose_logging_arg,
         

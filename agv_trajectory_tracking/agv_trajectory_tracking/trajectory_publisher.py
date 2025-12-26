@@ -24,7 +24,6 @@ class TrajectoryPublisher(Node):
         self.declare_parameter('enable_publish', True)
         self.declare_parameter('trajectory_speed', 0.3) 
         self.declare_parameter('corner_speed_scale', 0.3) 
-        self.declare_parameter('ramp_time', 3.0) 
         
         self.trajectory_type = self.get_parameter('trajectory_type').value
         self.publish_rate = self.get_parameter('publish_rate').value
@@ -36,7 +35,6 @@ class TrajectoryPublisher(Node):
         self.enable_publish = self.get_parameter('enable_publish').value
         self.base_speed = self.get_parameter('trajectory_speed').value
         self.corner_scale = self.get_parameter('corner_speed_scale').value
-        self.ramp_time = self.get_parameter('ramp_time').value
         
         self.path_pub = self.create_publisher(Path, '/trajectory', 10)
         
@@ -57,12 +55,9 @@ class TrajectoryPublisher(Node):
         self.get_logger().info('🚀 Starting Trajectory Generation...')
 
     def calculate_speed_factor(self, t):
-        ramp_factor = 1.0
-        if self.real_time_elapsed < self.ramp_time:
-             progress = self.real_time_elapsed / self.ramp_time
-             ramp_factor = progress * progress * (3.0 - 2.0 * progress)
-
+        """Calculate speed factor based on trajectory shape (no ramp)"""
         shape_factor = 1.0
+        
         if self.trajectory_type == 2: # SQUARE
             side = self.radius * 2.0
             perimeter_pos = (t * self.base_speed) % (4 * side)
@@ -85,7 +80,7 @@ class TrajectoryPublisher(Node):
                 ratio = min_dist_peak / (math.pi / 3.0)
                 shape_factor = self.corner_scale + (1.0 - self.corner_scale) * (ratio**0.5)
             else: shape_factor = 1.0
-        return ramp_factor * shape_factor
+        return shape_factor
 
     def trajectory_reference_square(self, t):
         side = self.radius * 2.0
