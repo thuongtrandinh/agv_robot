@@ -11,33 +11,38 @@ def launch_setup(context, *args, **kwargs):
     center_x = context.launch_configurations['center_x']
     center_y = context.launch_configurations['center_y']
     
-    # 2. CẤU HÌNH TỰ ĐỘNG THEO LOẠI QUỸ ĐẠO
+    # 2. CẤU HÌNH TỰ ĐỘNG
+    # LƯU Ý: ĐÃ FIX TYPO TRONG LOGIC
     
     if traj_type == '1': # === CIRCLE (Dễ) ===
         print(f"🚀 MODE: CIRCLE (R={radius_val}m)")
-        traj_speed = 0.15           # Vận tốc chậm để ổn định
-        corner_scale = 1.0          # Không cần giảm tốc góc
-        ctrl_max_lin = 0.25         # Giới hạn vận tốc tuyến tính
-        ctrl_max_ang = 0.6          # Giới hạn vận tốc góc
+        traj_speed = 0.20  # <--- GIẢM TỐC ĐỘ Ở ĐÂY (Ví dụ từ 0.35 xuống 0.20 m/s)
+        ramp_time = 3.5          
+        corner_scale = 1.0
+        ctrl_max_lin = 0.40      
+        ctrl_max_ang = 0.8       
         
     elif traj_type == '2': # === SQUARE (Trung bình) ===
         print(f"🚀 MODE: SQUARE (Side={radius_val}m)")
-        traj_speed = 0.12           # Chậm hơn để bám góc tốt
-        corner_scale = 0.4          # Giảm 60% tốc độ tại góc
-        ctrl_max_lin = 0.20         # Giới hạn thấp hơn
-        ctrl_max_ang = 1.2          # Cho phép quay nhanh tại góc
+        traj_speed = 0.25  # <--- GIẢM TỐC ĐỘ Ở ĐÂY
+        ramp_time = 6.0          
+        corner_scale = 0.8       
+        ctrl_max_lin = 0.3      
+        ctrl_max_ang = 1.5       
         
     elif traj_type == '3': # === FIGURE-8 (Khó nhất) ===
         print(f"🚀 MODE: FIGURE-8 (Amplitude={radius_val/2}m)")
-        traj_speed = 0.10           # Rất chậm
-        corner_scale = 0.5          # Giảm tại điểm giao
-        ctrl_max_lin = 0.18      
+        traj_speed = 0.18        
+        ramp_time = 5.0          
+        corner_scale = 0.5       
+        ctrl_max_lin = 0.28      
         ctrl_max_ang = 0.8       
         
     else: # Fallback
-        traj_speed = 0.10
+        traj_speed = 0.15
+        ramp_time = 3.0
         corner_scale = 1.0
-        ctrl_max_lin = 0.20
+        ctrl_max_lin = 0.25
         ctrl_max_ang = 0.5
 
     # 3. Định nghĩa Nodes
@@ -54,6 +59,7 @@ def launch_setup(context, *args, **kwargs):
             'radius': float(radius_val),
             'publish_rate': 20.0,
             'trajectory_speed': traj_speed,
+            'ramp_time': ramp_time,
             'corner_speed_scale': corner_scale,
         }]
     )

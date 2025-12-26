@@ -16,7 +16,7 @@ amcl:
     # TẮT nếu dùng EKF để publish TF map->odom
     # BẬT nếu AMCL là nguồn localization duy nhất
     tf_broadcast: true
-    transform_tolerance: 1.0
+    transform_tolerance: 0.5  # Giảm để TF chặt chẽ hơn
     
     # === INITIAL POSE ===
     set_initial_pose: true
@@ -30,17 +30,21 @@ amcl:
     # Differential drive robot
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
     
-    # Motion noise - TĂNG để particles spread mượt hơn
-    alpha1: 0.1    # Rotation noise từ rotation
-    alpha2: 0.1    # Rotation noise từ translation
-    alpha3: 0.1    # Translation noise từ translation
-    alpha4: 0.1    # Translation noise từ rotation
+    # Motion noise - Giảm để particles hội tụ ổn định hơn
+    alpha1: 0.05   # Rotation noise từ rotation
+    alpha2: 0.05   # Rotation noise từ translation
+    alpha3: 0.05   # Translation noise từ translation
+    alpha4: 0.05   # Translation noise từ rotation
     
     # === UPDATE THRESHOLDS ===
     # Robot phải di chuyển bao nhiêu trước khi update
-    update_min_d: 0.1     # 10cm di chuyển
-    update_min_a: 0.2     # ~11 độ xoay
-    resample_interval: 1  # Resample mỗi update
+    update_min_d: 0.2     # 20cm di chuyển (giảm update frequency)
+    update_min_a: 0.3     # ~17 độ xoay
+    resample_interval: 2  # Resample mỗi 2 updates
+    
+    # Giới hạn tần số update tối đa
+    min_update_rate: 1.0   # Tối đa 1Hz update
+    max_update_rate: 5.0   # Nhưng cho phép lên đến 5Hz khi cần
     
     # === LASER MODEL ===
     laser_model_type: "likelihood_field"
@@ -64,10 +68,10 @@ amcl:
     beam_skip_error_threshold: 0.9
     
     # === PARTICLES ===
-    min_particles: 500
-    max_particles: 2000
-    pf_err: 0.05
-    pf_z: 0.99
+    min_particles: 200     # Giảm để tính toán nhanh hơn
+    max_particles: 1000    # Giảm overhead
+    pf_err: 0.1            # Tăng tolerance (chấp nhận sai số nhiều hơn)
+    pf_z: 0.95             # Giảm confidence yêu cầu
     
     # === RECOVERY ===
     # Tắt để không random particles khi mất track

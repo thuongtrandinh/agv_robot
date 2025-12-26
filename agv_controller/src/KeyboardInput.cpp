@@ -68,12 +68,15 @@ void KeyboardInput::keyboardLoop()
     const double angular_step = 0.1;  // step tăng góc
     const double max_linear = 1.0;    // giới hạn tốc độ tiến
     const double max_angular = 1.0;   // giới hạn tốc độ xoay
+    const double fixed_linear_speed = 0.3;   // Vận tốc tiến/lùi cố định
+    const double fixed_angular_speed = 0.3;  // Vận tốc xoay cố định
 
     while (running_)
     {
         c = getchar();
 
         if (c == 'q' || c == 'Q') {
+            publishCmd(0.0, 0.0); // Dừng robot trước khi thoát
             running_ = false;
             break;
         }
@@ -90,6 +93,7 @@ void KeyboardInput::keyboardLoop()
                 if (linear_speed_ > max_linear)
                     linear_speed_ = max_linear;
             }
+            linear_speed_ = fixed_linear_speed;
             break;
 
         case 's':
@@ -102,6 +106,7 @@ void KeyboardInput::keyboardLoop()
                 if (linear_speed_ < -max_linear)
                     linear_speed_ = -max_linear;
             }
+            linear_speed_ = -fixed_linear_speed;
             break;
 
         case 'a':
@@ -109,6 +114,7 @@ void KeyboardInput::keyboardLoop()
             angular_speed_ += angular_step;
             if (angular_speed_ > max_angular)
                 angular_speed_ = max_angular;
+            angular_speed_ = fixed_angular_speed;
             break;
 
         case 'd':
@@ -116,6 +122,7 @@ void KeyboardInput::keyboardLoop()
             angular_speed_ -= angular_step;
             if (angular_speed_ < -max_angular)
                 angular_speed_ = -max_angular;
+            angular_speed_ = -fixed_angular_speed;
             break;
 
         case 'c':
