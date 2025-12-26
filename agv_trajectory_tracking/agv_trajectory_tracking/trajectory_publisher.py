@@ -14,7 +14,7 @@ class TrajectoryPublisher(Node):
     def __init__(self):
         super().__init__('trajectory_publisher')
         
-        self.declare_parameter('trajectory_type', 2)
+        self.declare_parameter('trajectory_type', 2) 
         self.declare_parameter('publish_rate', 20.0)
         self.declare_parameter('path_points', 200)
         self.declare_parameter('preview_time', 10.0)
