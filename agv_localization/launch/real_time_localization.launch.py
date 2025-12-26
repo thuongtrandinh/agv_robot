@@ -16,9 +16,11 @@ def launch_setup(context, *args, **kwargs):
     
     pkg_dir = get_package_share_directory("agv_localization")
     amcl_config_file = os.path.join(pkg_dir, "config", "amcl.yaml")
+    ekf_config_file = os.path.join(pkg_dir, "config", "ekf.yaml")
     
     print(f"✅ Loading map: {map_name_str}")
     print(f"✅ AMCL config: {amcl_config_file}")
+    print(f"✅ EKF config: {ekf_config_file}")
     print(f"✅ Initial pose: x={init_x}, y={init_y}, yaw={init_yaw}")
     
     map_path = PathJoinSubstitution([
@@ -29,38 +31,20 @@ def launch_setup(context, *args, **kwargs):
     ])
 
     # ===========================
-    # EKF LOCAL (odom frame fusion: IMU + wheel odometry)
+    # EKF Node (Fuses IMU + Wheel Odometry)
+    # Output: /odometry/filtered, TF: odom -> base_footprint
     # ===========================
-    ekf_local_config = os.path.join(pkg_dir, "config", "ekf_local.yaml")
-    ekf_local_node = Node(
+    ekf_node = Node(
         package="robot_localization",
         executable="ekf_node",
-        name="ekf_local_node",
+        name="ekf_filter_node",
         output="screen",
         parameters=[
-            ekf_local_config,
+            ekf_config_file,
             {"use_sim_time": use_sim_time}
         ],
         remappings=[
-            ("/odometry/filtered", "/odometry/local")  # Output: /odometry/local
-        ]
-    )
-    
-    # ===========================
-    # EKF GLOBAL (map frame fusion: local EKF + AMCL)
-    # ===========================
-    ekf_global_config = os.path.join(pkg_dir, "config", "ekf_global.yaml")
-    ekf_global_node = Node(
-        package="robot_localization",
-        executable="ekf_node",
-        name="ekf_global_node",
-        output="screen",
-        parameters=[
-            ekf_global_config,
-            {"use_sim_time": use_sim_time}
-        ],
-        remappings=[
-            ("/odometry/filtered", "/odometry/global")  # Output: /odometry/global
+            ("/odometry/filtered", "/odometry/filtered")
         ]
     )
     
@@ -80,9 +64,10 @@ def launch_setup(context, *args, **kwargs):
 
     # ===========================
     # AMCL (delayed to ensure /scan and TF are ready)
+    # Provides global localization: map -> odom TF
     # ===========================
     amcl_delayed = TimerAction(
-        period=4.0,
+        period=3.0,
         actions=[
             Node(
                 package="nav2_amcl",
@@ -92,11 +77,14 @@ def launch_setup(context, *args, **kwargs):
                 parameters=[
                     amcl_config_file,
                     {"use_sim_time": use_sim_time},
+                    {
+                        "initial_pose.x": init_x,
+                        "initial_pose.y": init_y,
+                        "initial_pose.yaw": init_yaw,
+                    }
                 ],
                 remappings=[
                     ("/scan", "/scan"),
-                    # AMCL sử dụng /odometry/local để estimate pose
-                    ("/odom", "/odometry/local")
                 ]
             )
         ]
@@ -118,8 +106,7 @@ def launch_setup(context, *args, **kwargs):
     )
 
     return [
-        ekf_local_node,
-        ekf_global_node,
+        ekf_node,
         nav2_map_server,
         amcl_delayed,
         lifecycle

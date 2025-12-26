@@ -1,94 +1,106 @@
+# ============================================
+# EKF CONFIG CHO ROBOT THẬT
+# Fuses: IMU + Wheel Odometry
+# Output: /odometry/filtered -> TF odom->base_footprint
+# ============================================
 ekf_filter_node:
     ros__parameters:
-      use_sim_time: false # Chạy trên robot thật
-
-      # Tần số ổn định để phục vụ Controller
-      frequency: 20.0
+      # === QUAN TRỌNG: Robot thật ===
+      use_sim_time: false
       
-      sensor_timeout: 0.1 # 100ms
-
+      # Tần số EKF - 50Hz cho smooth
+      frequency: 50.0
+      
+      # Sensor timeout
+      sensor_timeout: 0.2
+      
+      # Chế độ 2D cho robot mặt đất
       two_d_mode: true
+      
+      # Publish TF odom -> base_footprint
       publish_tf: true
-
+      
+      # Smooth lagged data để tránh nhảy
+      smooth_lagged_data: true
+      history_length: 0.5
+      
+      # TF Frames cho robot thật
       map_frame: map
       odom_frame: odom
-      base_link_frame: base_footprint
-      world_frame: odom # EKF Local Frame
+      base_link_frame: base_footprint    # QUAN TRỌNG: đúng frame của robot
+      world_frame: odom                   # EKF local làm việc trong odom frame
 
       # ============================================
-      # SENSOR INPUTS (Fusing 3 sources)
+      # SENSOR 1: IMU
+      # Topic: /imu (từ STM32 hoặc sensor IMU thật)
       # ============================================
+      imu0: /imu
       
-      # IMU (1) - Lấy vyaw và ax (Đã Calib)
-      imu0: /imu_with_covariance
-      imu0_config: [false, false, false,
-                    false, false, false,
-                    false, false, false,
-                    false, false, true,  # vyaw (Angular Velocity around Z)
-                    true,  false, false] # ax (Linear Acceleration along X)
-      imu0_differential: true
-      imu0_queue_size: 2 
-      imu0_remove_gravitational_acceleration: true
+      # Config: [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+      # Lấy: yaw orientation, vyaw (angular velocity Z), ax (linear acceleration X)
+      imu0_config: [false, false, false,      # x, y, z position (không lấy)
+                    false, false, true,        # roll, pitch, YAW (lấy yaw)
+                    false, false, false,       # vx, vy, vz
+                    false, false, true,        # vroll, vpitch, VYAW (lấy angular velocity Z)
+                    true,  false, false]       # AX, ay, az (lấy linear acceleration X)
 
-      # Odom (2) - Lấy vx và vyaw (Encoder)
+      imu0_differential: false               # Sử dụng giá trị tuyệt đối
+      imu0_queue_size: 10
+      imu0_remove_gravitational_acceleration: true  # Loại bỏ gravity
+
+      # ============================================
+      # SENSOR 2: Wheel Odometry
+      # Topic: /diff_cont/odom (từ ros2_control differential controller)
+      # ============================================
       odom0: /diff_cont/odom
-      odom0_config: [false, false, false,
-                     false, false, false,
-                     true,  false, false, # vx
-                     false, false, true,  # vyaw
-                     false, false, false]
+      
+      # Chỉ lấy velocity từ encoder (vx, vyaw)
+      # Không lấy position vì encoder drift theo thời gian
+      odom0_config: [false, false, false,     # x, y, z position (không lấy - drift)
+                     false, false, false,      # roll, pitch, yaw
+                     true,  false, false,      # VX (lấy linear velocity X)
+                     false, false, true,       # vroll, vpitch, VYAW (lấy angular velocity Z)
+                     false, false, false]      # ax, ay, az
+
       odom0_differential: false
-      odom0_queue_size: 2
-
-      # ArUco Pose (3) - Tốc độ thấp, độ trễ cao
-      pose0: /aruco/pose_with_covariance
-      pose0_config: [true,  true,  false, # Vẫn lấy vị trí X, Y
-                     false, false, true,  # Vẫn lấy Yaw
-                     false, false, false,
-                     false, false, false,
-                     false, false, false]
-      pose0_differential: false
-      pose0_queue_size: 1  # Chỉ lấy gói tin ArUco mới nhất
-      pose0_nodelay: false
-      
-      # Tăng ngưỡng từ chối cao để ArUco không làm EKF crash
-      pose0_rejection_threshold: 15.0 
+      odom0_queue_size: 10
 
       # ============================================
-      # COVARIANCES & TRUST (Điều chỉnh tín nhiệm)
+      # PROCESS NOISE COVARIANCE
+      # Noise thấp = tin tưởng model hơn = smooth hơn
+      # State: [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
       # ============================================
-      
-      # Process Noise: Mức thấp, tin tưởng vào mô hình chuyển động của robot
-      # Tuy nhiên tăng nhẹ tốc độ để EKF tin vào sensor hơn là dự đoán (hàng 7, 8, 12)
-      process_noise_covariance: [0.01, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
-                                 0.0,    0.01, 0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
-                                 0.0,    0.0,    0.06, 0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
-                                 0.0,    0.0,    0.0,    0.03, 0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
-                                 0.0,    0.0,    0.0,    0.0,    0.03, 0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
-                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.06, 0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
-                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.025, 0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,  # vx noise
-                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.025, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
-                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.04, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
-                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.01, 0.0,    0.0,    0.0,    0.0,    0.0,
-                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.01, 0.0,    0.0,    0.0,    0.0,
-                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.02, 0.0,    0.0,    0.0,  # vyaw noise
-                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.01, 0.0,    0.0,
-                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.01, 0.0,
-                                 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.015]
+      process_noise_covariance: [0.01,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                                 0.0,   0.01,  0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                                 0.0,   0.0,   0.06,  0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                                 0.0,   0.0,   0.0,   0.03,  0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                                 0.0,   0.0,   0.0,   0.0,   0.03,  0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,   0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.01,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.04,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.01,  0.0,   0.0,   0.0,   0.0,   0.0,
+                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.01,  0.0,   0.0,   0.0,   0.0,
+                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.01,  0.0,   0.0,   0.0,
+                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.01,  0.0,   0.0,
+                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,
+                                 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.015]
 
-      # Initial Estimate Covariance: Mức rất thấp (tin tưởng vào giá trị khởi tạo)
-      initial_estimate_covariance: [1e-9,   0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
-                                    0.0,    1e-9,   0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
-                                    0.0,    0.0,    1e-9,   0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
-                                    0.0,    0.0,    0.0,    1e-9,   0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
-                                    0.0,    0.0,    0.0,    0.0,    1e-9,   0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
-                                    0.0,    0.0,    0.0,    0.0,    0.0,    1e-9,   0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
-                                    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1e-9,   0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
-                                    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1e-9,   0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
-                                    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1e-9,   0.0,     0.0,     0.0,     0.0,    0.0,    0.0,
-                                    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1e-9,    0.0,     0.0,     0.0,    0.0,    0.0,
-                                    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     1e-9,    0.0,     0.0,    0.0,    0.0,
-                                    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     1e-9,    0.0,    0.0,    0.0,
-                                    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     1e-9,   0.0,    0.0,
-                                    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    1e-9,   0.0,
-                                    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,     0.0,    0.0,    1e-9]
+      # ============================================
+      # INITIAL ESTIMATE COVARIANCE
+      # ============================================
+      initial_estimate_covariance: [1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                    0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                    0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                    0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                    0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                    0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                    0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                    0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                    0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                    0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,
+                                    0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,
+                                    0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,
+                                    0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,
+                                    0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,
+                                    0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9]
