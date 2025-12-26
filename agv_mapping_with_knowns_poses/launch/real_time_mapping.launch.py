@@ -47,12 +47,6 @@ def generate_launch_description():
             ("/scan", "/scan")
         ]
     )
-
-    # 3. ArUco Mapper & Lifecycle (Giữ nguyên)
-    aruco_mapper = Node(
-        package="agv_zed2", executable="aruco_mapper", name="aruco_mapper",
-        parameters=[{"use_sim_time": use_sim_time}, {"map_frame": "map"}]
-    )
     
     lifecycle_manager = Node(
         package="nav2_lifecycle_manager", executable="lifecycle_manager",
@@ -69,13 +63,9 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument("slam_config", default_value=slam_config_file),
-        
         ekf_node,
-        
         # Chờ EKF ổn định rồi mới chạy SLAM
         TimerAction(period=3.0, actions=[slam_node]),
-        
-        aruco_mapper,
         map_saver,
         lifecycle_manager
     ])
