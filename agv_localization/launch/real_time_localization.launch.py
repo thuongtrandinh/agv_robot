@@ -117,11 +117,32 @@ def launch_setup(context, *args, **kwargs):
         ],
     )
 
+    # ===========================
+    # ArUco Localizer (Global pose correction from known markers)
+    # ===========================
+    aruco_localizer = Node(
+        package="agv_zed2",
+        executable="aruco_localizer",
+        name="aruco_localizer",
+        output="screen",
+        parameters=[
+            {"map_frame": "map"},
+            {"camera_frame_id": "zed2_left_camera_frame"},
+            {"base_frame_id": "base_footprint"},
+            {"marker_map_file": "aruco_map_positions.yaml"},
+            {"position_variance": 0.0001},
+            {"orientation_variance": 0.001},
+            {"distance_scaling": 0.00005},
+            {"publish_frequency": 10.0}
+        ]
+    )
+
     return [
         ekf_local_node,
         ekf_global_node,
         nav2_map_server,
         amcl_delayed,
+        aruco_localizer,  # ArUco-based global localization
         lifecycle
     ]
 

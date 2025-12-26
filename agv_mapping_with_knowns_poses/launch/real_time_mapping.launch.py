@@ -60,12 +60,30 @@ def generate_launch_description():
         parameters=[{"save_map_timeout": 5.0}]
     )
 
+    # ===========================
+    # ArUco Mapper (Save detected markers to YAML)
+    # ===========================
+    aruco_mapper = Node(
+        package="agv_zed2",
+        executable="aruco_mapper",
+        name="aruco_mapper",
+        output="screen",
+        parameters=[
+            {"map_frame": "map"},
+            {"camera_frame_id": "zed2_left_camera_frame"},
+            {"marker_size": 0.173},
+            {"max_marker_distance": 3.0},
+            {"max_jump_distance": 0.30}
+        ]
+    )
+
     return LaunchDescription([
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument("slam_config", default_value=slam_config_file),
         ekf_node,
         # Chờ EKF ổn định rồi mới chạy SLAM
         TimerAction(period=3.0, actions=[slam_node]),
+        aruco_mapper,  # ArUco Mapper để lưu marker positions
         map_saver,
         lifecycle_manager
     ])
