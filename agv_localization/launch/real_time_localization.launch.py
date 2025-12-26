@@ -10,7 +10,7 @@ def launch_setup(context, *args, **kwargs):
     map_name_str = "lab208b3"
     use_sim_time = LaunchConfiguration("use_sim_time", default="false")
     
-    init_x = float(context.launch_configurations.get('x_pos', '0'))
+    init_x = float(context.launch_configurations.geet('x_pos', '0'))
     init_y = float(context.launch_configurations.get('y_pos', '0'))
     init_yaw = float(context.launch_configurations.get('yaw', '0.0'))
     
