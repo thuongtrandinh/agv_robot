@@ -103,18 +103,25 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # ===========================
-    # Lifecycle Manager
+    # Lifecycle Manager (delayed to wait for map_server and amcl)
     # ===========================
-    lifecycle = Node(
-        package="nav2_lifecycle_manager",
-        executable="lifecycle_manager",
-        name="lifecycle_manager_localization",
-        output="screen",
-        parameters=[
-            {"node_names": ["map_server", "amcl"]},
-            {"use_sim_time": use_sim_time},
-            {"autostart": True}
-        ],
+    lifecycle = TimerAction(
+        period=5.0,  # Đợi sau AMCL khởi động
+        actions=[
+            Node(
+                package="nav2_lifecycle_manager",
+                executable="lifecycle_manager",
+                name="lifecycle_manager_localization",
+                output="screen",
+                parameters=[
+                    {"node_names": ["map_server", "amcl"]},
+                    {"use_sim_time": use_sim_time},
+                    {"autostart": True},
+                    {"bond_timeout": 10.0},  # Tăng timeout
+                    {"attempt_respawn_reconnection": True}
+                ],
+            )
+        ]
     )
 
     # ===========================
