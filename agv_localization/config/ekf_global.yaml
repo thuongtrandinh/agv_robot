@@ -31,6 +31,7 @@ ekf_global_node:
     publish_tf: true          # Publish TF map -> odom
     smooth_lagged_data: true  # Smooth delayed sensor data (AMCL, ArUco)
     history_length: 1.0       # Keep 1s history for out-of-order data
+    print_diagnostics: true   # DEBUG: xem diagnostic info
     
     # === TF FRAMES ===
     map_frame: map
@@ -51,7 +52,9 @@ ekf_global_node:
                    false, false, true,
                    false, false, false]
     odom0_differential: false
+    odom0_relative: false     # Absolute measurement
     odom0_queue_size: 10
+    odom0_publish_tf: true    # QUAN TRỌNG: publish /odometry/global
 
     # ============================================
     # INPUT 2: AMCL POSE (LiDAR-based Localization)
@@ -68,7 +71,17 @@ ekf_global_node:
     pose0_differential: false
     pose0_relative: false     # Absolute measurement từ AMCL
     pose0_queue_size: 10
-    pose0_rejection_threshold: 2.0  # Reject nếu AMCL jump > 2m
+    pose0_rejection_threshold: 3.0  # Reject nếu AMCL jump > 3m
+    # ⭐ Giảm độ tin cậy AMCL để minimize tác động khi standing still
+    # Chỉ dùng để chống drift dài hạn khi di chuyển
+    pose0_covariance: [
+      0.5,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.5,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  1.0
+    ]
 
     # ============================================
     # INPUT 3: ARUCO POSE (Vision-based Localization)
@@ -84,30 +97,42 @@ ekf_global_node:
                    false, false, false]
     pose1_differential: false
     pose1_relative: false     # Absolute measurement từ ArUco
-    pose1_queue_size: 3       # Nhỏ để response nhanh khi detect marker
-    pose1_rejection_threshold: 5.0  # Reject nếu ArUco báo vị trí quá xa
+    pose1_queue_size: 5       # Tăng từ 3 → 5 để xử lý stable khi standing still
+    pose1_rejection_threshold: 2.0  # Reject nếu ArUco báo vị trí quá xa
+    # ⭐ Giảm độ tin cậy ArUco để minimize tác động khi standing still
+    # Chỉ dùng để reset vị trí khi detect marker new
+    pose1_covariance: [
+      0.8,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.8,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  1.0
+    ]
 
     # ============================================
-    # PROCESS NOISE COVARIANCE
+    # PROCESS NOISE COVARIANCE - GIẢM ĐỂ FREEZE KHI STANDING STILL
     # ============================================
-    # Process noise: tăng cho position (x,y,yaw) để EKF tin AMCL hơn
+    # LOGIC: Process noise thấp = EKF tin vào state cũ, không extrapolate
+    # Khi vx=0 & vyaw=0 (standing), prediction step không thay đổi position
+    # Chỉ khi có vx hoặc vyaw mới update x,y,yaw
     # Index: [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
     process_noise_covariance: [
-      0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.025,0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.025,0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.04, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.02, 0.0,  0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.015
+      0.0001, 0.0,     0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,    0.0001,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,    0.0,     1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,    0.0,     0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,    0.0,     0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,    0.0,     0.0,  0.0,  0.0,  0.0001, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,    0.0,     0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,    0.0,     0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,    0.0,     0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,    0.0,     0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,    0.0,     0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,
+      0.0,    0.0,     0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,
+      0.0,    0.0,     0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,
+      0.0,    0.0,     0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,
+      0.0,    0.0,     0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01
     ]
 
     # ============================================

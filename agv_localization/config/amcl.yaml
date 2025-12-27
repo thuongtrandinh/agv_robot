@@ -30,18 +30,20 @@ amcl:
     # Differential drive robot
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
     
-    # Motion noise - Giảm để particles hội tụ nhanh và ổn định
-    alpha1: 0.1    # Rotation noise từ rotation
-    alpha2: 0.1    # Rotation noise từ translation  
-    alpha3: 0.1    # Translation noise từ translation
-    alpha4: 0.1    # Translation noise từ rotation
-    alpha5: 0.1    # Translation noise (strafe)
+    # Motion noise - Giảm MẠNH để tránh noise khi standing still
+    # Particles sẽ tight hơn → AMCL output ổn định hơn
+    alpha1: 0.02   # Rotation noise từ rotation (giảm từ 0.1)
+    alpha2: 0.02   # Rotation noise từ translation (giảm từ 0.1)
+    alpha3: 0.02   # Translation noise từ translation (giảm từ 0.1)
+    alpha4: 0.02   # Translation noise từ rotation (giảm từ 0.1)
+    alpha5: 0.02   # Translation noise (strafe) (giảm từ 0.1)
     
     # === UPDATE THRESHOLDS ===
     # Robot phải di chuyển bao nhiêu trước khi update
-    update_min_d: 0.1     # 10cm di chuyển - update thường xuyên hơn
-    update_min_a: 0.1     # ~6 độ xoay - update thường xuyên hơn
-    resample_interval: 1  # Resample mỗi update
+    # Tăng để tránh update quá thường xuyên = giảm noise
+    update_min_d: 0.25    # 25cm di chuyển (tăng từ 0.1) - ít noise hơn
+    update_min_a: 0.25    # ~14 độ xoay (tăng từ 0.1) - ít noise hơn
+    resample_interval: 2  # Resample mỗi 2 update - ổn định hơn
     
     # === LASER MODEL ===
     laser_model_type: "likelihood_field"
@@ -50,13 +52,13 @@ amcl:
     laser_min_range: 0.15        # Phạm vi tối thiểu
     max_beams: 100               # Tăng số beams để localize chính xác hơn
     
-    # Laser probabilities - tune cho hội tụ nhanh
-    z_hit: 0.9               # Tăng tin tưởng laser hit
-    z_rand: 0.05             # Giảm random noise
-    z_short: 0.025           # Short reading
-    z_max: 0.025             # Max range reading
-    sigma_hit: 0.1           # Giảm std dev để chặt chẽ hơn
-    laser_likelihood_max_dist: 2.0
+    # Laser probabilities - tune để ổn định khi standing still
+    z_hit: 0.85              # Giảm từ 0.9 - balanced confidence
+    z_rand: 0.1              # Tăng từ 0.05 - cho phép flexibility
+    z_short: 0.025           # Short reading (giữ nguyên)
+    z_max: 0.025             # Max range reading (giữ nguyên)
+    sigma_hit: 0.2           # TĂNG từ 0.1 - scan matching ít chặt chẽ hơn = ít noise
+    laser_likelihood_max_dist: 3.0  # Tăng từ 2.0 - cho phép range lớn hơn
     
     # Beam skip (tăng performance)
     do_beamskip: false
@@ -65,10 +67,10 @@ amcl:
     beam_skip_error_threshold: 0.9
     
     # === PARTICLES ===
-    min_particles: 500     # Tăng để hội tụ tốt hơn
-    max_particles: 2000    # Tăng cho độ chính xác
-    pf_err: 0.05           # Giảm tolerance
-    pf_z: 0.99             # Tăng confidence yêu cầu
+    min_particles: 800     # Tăng từ 500 - hội tụ ổn định hơn
+    max_particles: 2500    # Tăng từ 2000 - precision cao hơn
+    pf_err: 0.08           # Tăng từ 0.05 - ít resample, ít noise
+    pf_z: 0.95             # Giảm từ 0.99 - balanced resample
     
     # === RECOVERY ===
     # Bật recovery để tự phục hồi khi mất track
