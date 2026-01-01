@@ -63,11 +63,6 @@ void KeyboardInput::keyboardLoop()
 {
     char c;
 
-    const double linear_step = 0.1;   // step tăng tốc
-    const double min_linear = 0.2;    // minimum linear speed when starting from 0
-    const double angular_step = 0.1;  // step tăng góc
-    const double max_linear = 1.0;    // giới hạn tốc độ tiến
-    const double max_angular = 1.0;   // giới hạn tốc độ xoay
     const double fixed_linear_speed = 0.3;   // Vận tốc tiến/lùi cố định
     const double fixed_angular_speed = 0.3;  // Vận tốc xoay cố định
 
@@ -85,43 +80,21 @@ void KeyboardInput::keyboardLoop()
         {
         case 'w':
         case 'W':
-            if (std::fabs(linear_speed_) < 1e-6) {
-                // start from minimum linear speed instead of the small step
-                linear_speed_ = min_linear;
-            } else {
-                linear_speed_ += linear_step;
-                if (linear_speed_ > max_linear)
-                    linear_speed_ = max_linear;
-            }
             linear_speed_ = fixed_linear_speed;
             break;
 
         case 's':
         case 'S':
-            if (std::fabs(linear_speed_) < 1e-6) {
-                // start moving backwards from -min_linear
-                linear_speed_ = -min_linear;
-            } else {
-                linear_speed_ -= linear_step;
-                if (linear_speed_ < -max_linear)
-                    linear_speed_ = -max_linear;
-            }
             linear_speed_ = -fixed_linear_speed;
             break;
 
         case 'a':
         case 'A':
-            angular_speed_ += angular_step;
-            if (angular_speed_ > max_angular)
-                angular_speed_ = max_angular;
             angular_speed_ = fixed_angular_speed;
             break;
 
         case 'd':
         case 'D':
-            angular_speed_ -= angular_step;
-            if (angular_speed_ < -max_angular)
-                angular_speed_ = -max_angular;
             angular_speed_ = -fixed_angular_speed;
             break;
 

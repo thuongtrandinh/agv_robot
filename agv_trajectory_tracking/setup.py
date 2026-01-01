@@ -33,7 +33,8 @@ setup(
             'fuzzy_trajectory_controller = agv_trajectory_tracking.fuzzy_trajectory_controller:main',
             'trajectory_publisher = agv_trajectory_tracking.trajectory_publisher:main',
             'trajectory_visualizer = agv_trajectory_tracking.trajectory_visualizer:main',
-            'trajectory_plotter = agv_trajectory_tracking.trajectory_plotter:main'
+            'trajectory_plotter = agv_trajectory_tracking.trajectory_plotter:main',
+            'realtime_visualizer = agv_trajectory_tracking.realtime_visualizer:main',
         ],
     },
 )

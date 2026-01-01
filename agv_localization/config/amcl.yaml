@@ -35,23 +35,29 @@ amcl:
     alpha2: 0.05   # Rotation noise từ translation
     alpha3: 0.05   # Translation noise từ translation
     alpha4: 0.05   # Translation noise từ rotation
+    alpha1: 0.15   # Rotation noise từ rotation (Tăng lên cho robot thật)
+    alpha2: 0.15   # Rotation noise từ translation
+    alpha3: 0.15   # Translation noise từ translation
+    alpha4: 0.15   # Translation noise từ rotation
     
     # === UPDATE THRESHOLDS ===
     # Robot phải di chuyển bao nhiêu trước khi update
-    update_min_d: 0.2     # 20cm di chuyển (giảm update frequency)
-    update_min_a: 0.3     # ~17 độ xoay
+    update_min_d: 0.1     # 20cm di chuyển (giảm update frequency)
+    update_min_a: 0.056     # ~17 độ xoay
+    update_min_d: 0.2     # Tăng lên 20cm để giảm tần suất nhảy TF
+    update_min_a: 0.1     # Tăng lên ~6 độ
     resample_interval: 2  # Resample mỗi 2 updates
     
     # Giới hạn tần số update tối đa
-    min_update_rate: 1.0   # Tối đa 1Hz update
-    max_update_rate: 5.0   # Nhưng cho phép lên đến 5Hz khi cần
+    min_update_rate: 10.0   # Tối đa 1Hz update
+    max_update_rate: 20.0   # Nhưng cho phép lên đến 5Hz khi cần
     
     # === LASER MODEL ===
     laser_model_type: "likelihood_field"
     scan_topic: "scan"           # Topic LiDAR của robot thật
-    laser_max_range: 12.0        # Phạm vi tối đa LiDAR (meters)
+    laser_max_range: 5.0        # Phạm vi tối đa LiDAR (meters)
     laser_min_range: 0.15        # Phạm vi tối thiểu
-    max_beams: 60                # Số beams sử dụng
+    max_beams: 360                # Số beams sử dụng
     
     # Laser probabilities - cân bằng để không jump
     z_hit: 0.7               # Probability of hitting obstacle
