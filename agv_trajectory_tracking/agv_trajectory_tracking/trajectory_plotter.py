@@ -10,7 +10,7 @@ Date: November 2, 2025
 import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Path, Odometry
-from geometry_msgs.msg import PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped, TwistStamped
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.patches import Circle
@@ -50,6 +50,9 @@ class TrajectoryPlotter(Node):
         self.errors = []
         self.errors_x = []  # Sai số theo trục X
         self.errors_y = []  # Sai số theo trục Y
+        self.vel_linear = []  # Vận tốc tuyến tính (m/s)
+        self.vel_angular = []  # Vận tốc góc (rad/s)
+        self.vel_time_stamps = []  # Timestamps cho vận tốc
         
         self.start_time = self.get_clock().now().nanoseconds / 1e9
         self.last_ref_point = None
@@ -61,7 +64,9 @@ class TrajectoryPlotter(Node):
         
         # Parameter for pose topic (default: /odometry/filtered for both sim and real)
         self.declare_parameter('pose_topic', '/odometry/filtered')
+        self.declare_parameter('cmd_vel_topic', '/diff_cont/cmd_vel')
         pose_topic = self.get_parameter('pose_topic').value
+        cmd_vel_topic = self.get_parameter('cmd_vel_topic').value
         
         # Subscribers
         self.ref_path_sub = self.create_subscription(
@@ -73,6 +78,11 @@ class TrajectoryPlotter(Node):
             Odometry, pose_topic,
             self.odom_callback, 10)
         
+        # Subscribe to cmd_vel for velocity
+        self.cmd_vel_sub = self.create_subscription(
+            TwistStamped, cmd_vel_topic,
+            self.cmd_vel_callback, 10)
+        
         # Setup matplotlib EARLY to be ready for first data
         self.setup_plots()
         
@@ -81,6 +91,7 @@ class TrajectoryPlotter(Node):
         
         self.get_logger().info('📊 Trajectory Plotter started!')
         self.get_logger().info(f'  Pose topic: {pose_topic}')
+        self.get_logger().info(f'  Cmd vel topic: {cmd_vel_topic}')
         self.get_logger().info(f'  Max history: {self.max_history} points')
         self.get_logger().info(f'  Update interval: {self.update_interval} ms ({1000.0/self.update_interval:.1f} Hz)')
         self.get_logger().info(f'  Trajectory publish rate: {self.publish_rate} Hz')
@@ -93,48 +104,65 @@ class TrajectoryPlotter(Node):
         self.get_logger().info('✅ Plotter ready! Waiting for trajectory data...')
     
     def setup_plots(self):
-        """Setup matplotlib figure with 3 subplots"""
+        """Setup matplotlib figure with 6 subplots (2x3)"""
         plt.ion()  # Interactive mode
-        self.fig = plt.figure(figsize=(16, 8))
+        self.fig = plt.figure(figsize=(20, 10))
         
-        # Subplot 1: X-Y trajectory plot
-        self.ax1 = self.fig.add_subplot(1, 3, 1)
-        self.ax1.set_xlabel('X (m)', fontsize=12)
-        self.ax1.set_ylabel('Y (m)', fontsize=12)
-        self.ax1.set_title('Trajectory Tracking', fontsize=14, fontweight='bold')
+        # Subplot 1: X-Y response vs reference (X over time)
+        self.ax1 = self.fig.add_subplot(2, 3, 1)
+        self.ax1.set_xlabel('Time (s)', fontsize=12)
+        self.ax1.set_ylabel('X Position (m)', fontsize=12)
+        self.ax1.set_title('X Position Response', fontsize=14, fontweight='bold')
         self.ax1.grid(True, alpha=0.3)
-        self.ax1.set_aspect('equal')
         
-        # Initialize lines
-        self.ref_line, = self.ax1.plot([], [], 'b-', linewidth=2, label='Reference', alpha=0.7)
-        self.actual_line, = self.ax1.plot([], [], 'r-', linewidth=2, label='Actual', alpha=0.8)
-        self.robot_marker, = self.ax1.plot([], [], 'ro', markersize=10, label='Robot')
-        
+        self.ref_x_line, = self.ax1.plot([], [], 'b-', linewidth=2, label='X_ref', alpha=0.7)
+        self.actual_x_line, = self.ax1.plot([], [], 'r-', linewidth=2, label='X_actual', alpha=0.8)
         self.ax1.legend(loc='upper right', fontsize=10)
         
-        # Subplot 2: Sai số theo trục X và Y
-        self.ax2 = self.fig.add_subplot(1, 3, 2)
+        # Subplot 1B: Y over time (will be on same figure)
+        self.ax1b = self.fig.add_subplot(2, 3, 2)
+        self.ax1b.set_xlabel('Time (s)', fontsize=12)
+        self.ax1b.set_ylabel('Y Position (m)', fontsize=12)
+        self.ax1b.set_title('Y Position Response', fontsize=14, fontweight='bold')
+        self.ax1b.grid(True, alpha=0.3)
+        
+        self.ref_y_line, = self.ax1b.plot([], [], 'b-', linewidth=2, label='Y_ref', alpha=0.7)
+        self.actual_y_line, = self.ax1b.plot([], [], 'r-', linewidth=2, label='Y_actual', alpha=0.8)
+        self.ax1b.legend(loc='upper right', fontsize=10)
+        
+        # Subplot 1C: Velocity (linear & angular)
+        self.ax1c = self.fig.add_subplot(2, 3, 3)
+        self.ax1c.set_xlabel('Time (s)', fontsize=12)
+        self.ax1c.set_ylabel('Velocity', fontsize=12)
+        self.ax1c.set_title('Commanded Velocity', fontsize=14, fontweight='bold')
+        self.ax1c.grid(True, alpha=0.3)
+        
+        self.vel_linear_line, = self.ax1c.plot([], [], 'g-', linewidth=2, label='v_linear (m/s)')
+        self.vel_angular_line, = self.ax1c.plot([], [], 'orange', linewidth=2, label='ω (rad/s)')
+        self.ax1c.legend(loc='upper right', fontsize=10)
+        
+        # Subplot 2: Error X & Y over time
+        self.ax2 = self.fig.add_subplot(2, 3, 4)
         self.ax2.set_xlabel('Time (s)', fontsize=12)
         self.ax2.set_ylabel('Error (m)', fontsize=12)
-        self.ax2.set_title('Error X & Y', fontsize=14, fontweight='bold')
+        self.ax2.set_title('Tracking Error (X & Y)', fontsize=14, fontweight='bold')
         self.ax2.grid(True, alpha=0.3)
         
         self.error_x_line, = self.ax2.plot([], [], 'r-', linewidth=2, label='Error X')
         self.error_y_line, = self.ax2.plot([], [], 'b-', linewidth=2, label='Error Y')
-        
         self.ax2.legend(loc='upper right', fontsize=10)
         
-        # Subplot 3: Tracking error tổng hợp (Euclidean)
-        self.ax3 = self.fig.add_subplot(1, 3, 3)
-        self.ax3.set_xlabel('Time (s)', fontsize=12)
-        self.ax3.set_ylabel('Total Error (m)', fontsize=12)
-        self.ax3.set_title('Total Tracking Error', fontsize=14, fontweight='bold')
+        # Subplot 3: Robot trajectory (2D X-Y plot)
+        self.ax3 = self.fig.add_subplot(2, 3, 5)
+        self.ax3.set_xlabel('X Position (m)', fontsize=12)
+        self.ax3.set_ylabel('Y Position (m)', fontsize=12)
+        self.ax3.set_title('Robot Trajectory', fontsize=14, fontweight='bold')
         self.ax3.grid(True, alpha=0.3)
+        self.ax3.set_aspect('equal')
         
-        self.error_line, = self.ax3.plot([], [], 'g-', linewidth=2)
-        self.error_mean_line = self.ax3.axhline(y=0, color='orange', linestyle='--', 
-                                                 linewidth=2, label='Mean Error')
-        
+        self.ref_trajectory_line, = self.ax3.plot([], [], 'b-', linewidth=2, label='Reference', alpha=0.7)
+        self.actual_trajectory_line, = self.ax3.plot([], [], 'r-', linewidth=2, label='Actual', alpha=0.8)
+        self.robot_marker, = self.ax3.plot([], [], 'ro', markersize=10, label='Robot Position')
         self.ax3.legend(loc='upper right', fontsize=10)
         
         # Add text for statistics
@@ -143,7 +171,6 @@ class TrajectoryPlotter(Node):
         
         plt.tight_layout()
         plt.subplots_adjust(bottom=0.12)
-    
     def reference_callback(self, msg):
         """Store reference trajectory"""
         if not self.is_ready:
@@ -181,6 +208,21 @@ class TrajectoryPlotter(Node):
         x = msg.pose.pose.position.x
         y = msg.pose.pose.position.y
         self._process_robot_position(x, y)
+    
+    def cmd_vel_callback(self, msg):
+        """Store commanded velocity from TwistStamped"""
+        self.vel_linear.append(msg.twist.linear.x)
+        self.vel_angular.append(msg.twist.angular.z)
+        
+        # Store timestamp aligned with message header
+        current_time = self.get_clock().now().nanoseconds / 1e9 - self.start_time
+        self.vel_time_stamps.append(current_time)
+        
+        # Limit history
+        if len(self.vel_linear) > self.max_history:
+            self.vel_linear.pop(0)
+            self.vel_angular.pop(0)
+            self.vel_time_stamps.pop(0)
     
     def _process_robot_position(self, x, y):
         """Process robot position and compute error"""
@@ -265,70 +307,111 @@ class TrajectoryPlotter(Node):
     
     def update_plot(self, frame):
         """Update plot data"""
-        # Update trajectory plot
-        if len(self.ref_x) > 0:
-            self.ref_line.set_data(self.ref_x, self.ref_y)
-        
-        if len(self.actual_x) > 0:
-            self.actual_line.set_data(self.actual_x, self.actual_y)
-            # Update robot position marker
-            self.robot_marker.set_data([self.actual_x[-1]], [self.actual_y[-1]])
-        
-        # Auto-scale axes
-        all_x = self.ref_x + self.actual_x
-        all_y = self.ref_y + self.actual_y
-        
-        if len(all_x) > 0:
-            margin = 1.0
-            x_min, x_max = min(all_x) - margin, max(all_x) + margin
-            y_min, y_max = min(all_y) - margin, max(all_y) + margin
-            self.ax1.set_xlim(x_min, x_max)
-            self.ax1.set_ylim(y_min, y_max)
-        
-        # Update error X & Y plot
-        if len(self.errors_x) > 0:
-            self.error_x_line.set_data(self.time_stamps, self.errors_x)
-            self.error_y_line.set_data(self.time_stamps, self.errors_y)
+        try:
+            # Update X-Y response plot (X over time)
+            if len(self.ref_x) > 0 and len(self.time_stamps) > 0:
+                self.ref_x_line.set_data(self.time_stamps, self.ref_x[:len(self.time_stamps)])
             
-            # Auto-scale error X & Y plot
-            time_margin = 1.0
-            all_errors_xy = self.errors_x + self.errors_y
-            error_max = max(abs(min(all_errors_xy)), abs(max(all_errors_xy)))
-            error_margin = max(0.1, error_max * 0.2)
-            self.ax2.set_xlim(0, max(self.time_stamps) + time_margin)
-            self.ax2.set_ylim(-error_max - error_margin, error_max + error_margin)
-        
-        # Update total error plot
-        if len(self.errors) > 0:
-            self.error_line.set_data(self.time_stamps, self.errors)
+            if len(self.actual_x) > 0 and len(self.time_stamps) > 0:
+                self.actual_x_line.set_data(self.time_stamps, self.actual_x[:len(self.time_stamps)])
             
-            # Update mean error line
-            mean_error = np.mean(self.errors)
-            self.error_mean_line.set_ydata([mean_error, mean_error])
+            # Auto-scale X plot
+            if len(self.time_stamps) > 0:
+                time_margin = 1.0
+                self.ax1.set_xlim(0, max(self.time_stamps) + time_margin)
+                if len(self.ref_x) > 0 or len(self.actual_x) > 0:
+                    x_data = [x for x in self.ref_x[:len(self.time_stamps)]] + [x for x in self.actual_x[:len(self.time_stamps)]]
+                    if x_data:
+                        x_margin = max(0.5, (max(x_data) - min(x_data)) * 0.1)
+                        self.ax1.set_ylim(min(x_data) - x_margin, max(x_data) + x_margin)
             
-            # Auto-scale error plot
-            time_margin = 1.0
-            error_margin = 0.5
-            self.ax3.set_xlim(0, max(self.time_stamps) + time_margin)
-            self.ax3.set_ylim(0, max(self.errors) + error_margin)
+            # Update Y-position response plot (Y over time)
+            if len(self.ref_y) > 0 and len(self.time_stamps) > 0:
+                self.ref_y_line.set_data(self.time_stamps, self.ref_y[:len(self.time_stamps)])
+            
+            if len(self.actual_y) > 0 and len(self.time_stamps) > 0:
+                self.actual_y_line.set_data(self.time_stamps, self.actual_y[:len(self.time_stamps)])
+            
+            # Auto-scale Y plot
+            if len(self.time_stamps) > 0:
+                time_margin = 1.0
+                self.ax1b.set_xlim(0, max(self.time_stamps) + time_margin)
+                if len(self.ref_y) > 0 or len(self.actual_y) > 0:
+                    y_data = [y for y in self.ref_y[:len(self.time_stamps)]] + [y for y in self.actual_y[:len(self.time_stamps)]]
+                    if y_data:
+                        y_margin = max(0.5, (max(y_data) - min(y_data)) * 0.1)
+                        self.ax1b.set_ylim(min(y_data) - y_margin, max(y_data) + y_margin)
+            
+            # Update velocity plot
+            if len(self.vel_linear) > 0 and len(self.vel_angular) > 0:
+                vel_time = list(range(len(self.vel_linear)))
+                self.vel_linear_line.set_data(vel_time, self.vel_linear)
+                self.vel_angular_line.set_data(vel_time, self.vel_angular)
+                
+                # Auto-scale velocity plot
+                time_margin = 5.0
+                all_vel = self.vel_linear + self.vel_angular
+                if all_vel:
+                    vel_max = max(abs(min(all_vel)), abs(max(all_vel)))
+                    vel_margin = max(0.1, vel_max * 0.2)
+                    self.ax1c.set_xlim(0, max(vel_time) + time_margin if vel_time else 1)
+                    self.ax1c.set_ylim(-vel_max - vel_margin, vel_max + vel_margin)
+            
+            # Update error X & Y plot
+            if len(self.errors_x) > 0:
+                self.error_x_line.set_data(self.time_stamps, self.errors_x)
+                self.error_y_line.set_data(self.time_stamps, self.errors_y)
+                
+                # Auto-scale error X & Y plot
+                time_margin = 1.0
+                all_errors_xy = self.errors_x + self.errors_y
+                error_max = max(abs(min(all_errors_xy)), abs(max(all_errors_xy)))
+                error_margin = max(0.1, error_max * 0.2)
+                self.ax2.set_xlim(0, max(self.time_stamps) + time_margin)
+                self.ax2.set_ylim(-error_max - error_margin, error_max + error_margin)
+            
+            # Update robot trajectory (2D XY plot)
+            if len(self.actual_x) > 0 and len(self.actual_y) > 0:
+                self.actual_trajectory_line.set_data(self.actual_x, self.actual_y)
+                self.robot_marker.set_data([self.actual_x[-1]], [self.actual_y[-1]])
+            
+            if len(self.ref_x) > 0 and len(self.ref_y) > 0:
+                self.ref_trajectory_line.set_data(self.ref_x, self.ref_y)
+            
+            # Auto-scale trajectory plot
+            all_x = self.ref_x + self.actual_x
+            all_y = self.ref_y + self.actual_y
+            
+            if len(all_x) > 0:
+                margin = 1.0
+                x_min, x_max = min(all_x) - margin, max(all_x) + margin
+                y_min, y_max = min(all_y) - margin, max(all_y) + margin
+                self.ax3.set_xlim(x_min, x_max)
+                self.ax3.set_ylim(y_min, y_max)
             
             # Update statistics text
-            max_error = max(self.errors)
-            min_error = min(self.errors)
-            current_error = self.errors[-1]
-            mean_error_x = np.mean(self.errors_x) if self.errors_x else 0
-            mean_error_y = np.mean(self.errors_y) if self.errors_y else 0
+            if len(self.errors) > 0:
+                max_error = max(self.errors)
+                mean_error = np.mean(self.errors)
+                mean_error_x = np.mean(self.errors_x) if self.errors_x else 0
+                mean_error_y = np.mean(self.errors_y) if self.errors_y else 0
+                current_error = self.errors[-1]
+                
+                stats_str = (
+                    f'📊 Mean Error: {mean_error:.3f}m | '
+                    f'Mean X: {mean_error_x:.3f}m | Mean Y: {mean_error_y:.3f}m | '
+                    f'Current: {current_error:.3f}m | Max: {max_error:.3f}m'
+                )
+                self.stats_text.set_text(stats_str)
             
-            stats_str = (
-                f'📊 Mean Error X: {mean_error_x:.3f}m | '
-                f'Mean Error Y: {mean_error_y:.3f}m | '
-                f'Mean Total: {mean_error:.3f}m | '
-                f'Current: {current_error:.3f}m | '
-                f'Max: {max_error:.3f}m'
-            )
-            self.stats_text.set_text(stats_str)
-        
-        return self.ref_line, self.actual_line, self.robot_marker, self.error_line, self.error_x_line, self.error_y_line
+            return self.ref_x_line, self.actual_x_line, self.ref_y_line, self.actual_y_line, \
+                   self.error_x_line, self.error_y_line, self.ref_trajectory_line, self.actual_trajectory_line, \
+                   self.robot_marker, self.vel_linear_line, self.vel_angular_line
+        except Exception as e:
+            self.get_logger().error(f'Error in update_plot: {e}')
+            return self.ref_x_line, self.actual_x_line, self.ref_y_line, self.actual_y_line, \
+                   self.error_x_line, self.error_y_line, self.ref_trajectory_line, self.actual_trajectory_line, \
+                   self.robot_marker, self.vel_linear_line, self.vel_angular_line
     
     def run(self):
         """Run the plotter with animation"""
