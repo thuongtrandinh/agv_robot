@@ -14,6 +14,7 @@ find_package(rclcpp_action REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
@@ -30,12 +31,17 @@ ament_target_dependencies(simple_controller rclcpp geometry_msgs sensor_msgs)
 add_executable(twist_relay src/twist_relay.cpp)
 ament_target_dependencies(twist_relay rclcpp geometry_msgs)
 
-add_executable(aruco_detector_sim src/aruco_detector_sim.cpp)
-ament_target_dependencies(aruco_detector_sim
-  rclcpp sensor_msgs geometry_msgs std_msgs visualization_msgs
-  cv_bridge tf2 tf2_ros tf2_geometry_msgs
+
+add_executable(stm32_odom src/stm32_odom.cpp)
+ament_target_dependencies(stm32_odom
+  rclcpp
+  std_msgs
+  sensor_msgs
+  nav_msgs
+  tf2_ros
+  tf2
+  geometry_msgs
 )
-target_link_libraries(aruco_detector_sim ${OpenCV_LIBRARIES} yaml-cpp)
 
 # Includes
 include_directories(
@@ -45,17 +51,18 @@ include_directories(
 )
 
 # Install resources
-install(DIRECTORY urdf launch xacro config include rviz worlds photos models
+install(DIRECTORY urdf launch xacro config include rviz worlds photos models 
   DESTINATION share/${PROJECT_NAME}
 )
 
 # Install executables
-install(TARGETS simple_controller twist_relay aruco_detector_sim
+install(TARGETS simple_controller stm32_odom twist_relay
   DESTINATION lib/${PROJECT_NAME})
 
 # Install Python scripts
 install(PROGRAMS
   src/scan_repub.py
+  src/scan_throttle.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

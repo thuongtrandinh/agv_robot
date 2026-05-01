@@ -19,7 +19,11 @@ def launch_setup(context, *args, **kwargs):
     use_sim_time_str = context.launch_configurations['use_sim_time']
     use_sim_time = use_sim_time_str.lower() == 'true'  # Convert string to boolean
     init_height = context.launch_configurations['height']
+    init_x = context.launch_configurations['x_pos']
+    init_y = context.launch_configurations['y_pos']
     world_name = context.launch_configurations['world']
+    launch_localization_str = context.launch_configurations['launch_localization']
+    launch_localization = launch_localization_str.lower() == 'true'
     
     pkg_path = os.path.join(get_package_share_directory(package_name))
     xacro_file = os.path.join(pkg_path, 'urdf', 'mobile_robot.urdf.xacro')
@@ -42,6 +46,16 @@ def launch_setup(context, *args, **kwargs):
     
     # 💡 Debug: Print rendered URDF size for verification
     print(f"✅ URDF successfully rendered! Size: {len(robot_description)} characters")
+    
+    # Determine map name based on world file
+    map_name = "small_house"
+    if "warehouse" in world_name:
+        map_name = "small_warehouse"
+    
+    print(f"✅ Spawn position: x={init_x}, y={init_y}")
+    print(f"✅ Auto-launch localization: {launch_localization}")
+    if launch_localization:
+        print(f"✅ Map name: {map_name}")
 
     # RViz config file
     rviz_config_file = os.path.join(pkg_path, 'rviz', 'rviz2.rviz')
@@ -72,12 +86,13 @@ def launch_setup(context, *args, **kwargs):
         output='screen'
     )
 
-    # Gazebo spawn entity with timing
+    # Gazebo spawn entity with x, y, z coordinates
     gz_spawn_entity = Node(
         package='ros_gz_sim',
         executable='create',
         output='screen',
-        arguments=['-topic', 'robot_description', '-entity', 'my_bot', '-z', init_height],
+        arguments=['-topic', 'robot_description', '-entity', 'my_bot', 
+                   '-x', init_x, '-y', init_y, '-z', init_height],
         parameters=[{'use_sim_time': use_sim_time}],
     )
 
@@ -125,6 +140,14 @@ def launch_setup(context, *args, **kwargs):
         output='screen'
     )
 
+    # Aruco detector
+    aruco_detector = Node(
+        package='agv_localization',
+        executable='aruco_map_localizer',
+        parameters=[{'use_sim_time': use_sim_time}],
+        output='screen'
+    )
+
     # Gazebo launch - IMPORTANT: Force simulation time and sync
     gazebo_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
@@ -141,14 +164,16 @@ def launch_setup(context, *args, **kwargs):
         ]
     )
 
+
     return [
-        # 🔥 CRITICAL ORDER: Bridge first for time sync, then Gazebo
-        bridge,
+        # 🔥 CRITICAL ORDER: Gazebo first to be the clock source, then the bridge
         gazebo_launch,
+        bridge,
         robot_state_publisher,
         rviz,
         gz_spawn_entity,
         scan_republisher,  # Add scan republisher
+        aruco_detector,
         RegisterEventHandler(
             event_handler=OnProcessExit(
                 target_action=gz_spawn_entity,
@@ -162,6 +187,75 @@ def launch_setup(context, *args, **kwargs):
             )
         ),
     ]
+    
+    # ==========================================
+    # OPTIONAL: Auto-launch Localization Stack
+    # ==========================================
+    if launch_localization:
+        # Include global_localization.launch.py with matching spawn position
+        localization_launch = IncludeLaunchDescription(
+            PythonLaunchDescriptionSource([
+                PathJoinSubstitution([
+                    FindPackageShare('agv_localization'),
+                    'launch',
+                    'global_localization.launch.py'
+                ])
+            ]),
+            launch_arguments={
+                'use_sim_time': use_sim_time_str,
+                'x_pos': init_x,
+                'y_pos': init_y,
+                'yaw': '0.0',
+                'map_name': map_name
+            }.items()
+        )
+        
+        # Add to nodes list
+        nodes_to_launch = [
+            gz_sim,
+            bridge,
+            robot_state_publisher,
+            rviz,
+            gz_spawn_entity,
+            scan_republisher,
+            localization_launch,  # Add localization
+            RegisterEventHandler(
+                event_handler=OnProcessExit(
+                    target_action=gz_spawn_entity,
+                    on_exit=[joint_state_broadcaster],
+                )
+            ),
+            RegisterEventHandler(
+                event_handler=OnProcessExit(
+                    target_action=joint_state_broadcaster,
+                    on_exit=[diff_drive_controller],
+                )
+            ),
+        ]
+    else:
+        # Without localization
+        nodes_to_launch = [
+            gz_sim,
+            bridge,
+            robot_state_publisher,
+            rviz,
+            gz_spawn_entity,
+            scan_republisher,
+            RegisterEventHandler(
+                event_handler=OnProcessExit(
+                    target_action=gz_spawn_entity,
+                    on_exit=[joint_state_broadcaster],
+                )
+            ),
+            RegisterEventHandler(
+                event_handler=OnProcessExit(
+                    target_action=joint_state_broadcaster,
+                    on_exit=[diff_drive_controller],
+                )
+            ),
+        ]
+    
+    return nodes_to_launch
 
 
 def generate_launch_description():
@@ -169,6 +263,18 @@ def generate_launch_description():
         'use_sim_time',
         default_value='true',
         description='Use simulation time'
+    )
+
+    x_pos_arg = DeclareLaunchArgument(
+        'x_pos',
+        default_value='0.0',
+        description='Initial X position of robot in simulation'
+    )
+
+    y_pos_arg = DeclareLaunchArgument(
+        'y_pos',
+        default_value='0.0',
+        description='Initial Y position of robot in simulation'
     )
 
     height_arg = DeclareLaunchArgument(
@@ -186,13 +292,24 @@ def generate_launch_description():
     world_arg = DeclareLaunchArgument(
         'world',
         default_value='small_house.world',
-        description='World file name (in worlds folder)'
+        description='World file to load. Options: small_house.world, small_warehouse.world, room_20x20.world',
+        choices=['small_house.world', 'small_warehouse.world', 'room_20x20.world']
+    )
+    
+    # Auto-launch localization (optional, can be disabled with launch_localization:=false)
+    launch_localization_arg = DeclareLaunchArgument(
+        'launch_localization',
+        default_value='false',
+        description='Auto-launch localization stack with matching spawn position'
     )
 
     return LaunchDescription([
         use_sim_time_arg,
+        x_pos_arg,
+        y_pos_arg,
         height_arg,
         gui_arg,
         world_arg,
+        launch_localization_arg,
         OpaqueFunction(function=launch_setup),
     ])

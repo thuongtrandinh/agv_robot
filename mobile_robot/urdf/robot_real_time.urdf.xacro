@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<robot name="myrobotagv" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Include phần hình dáng robot -->
+  <xacro:include filename="$(find mobile_robot)/urdf/new_robot_2.xacro"/>
+
+  <!-- Include ros2_control REAL hardware -->
+  <xacro:include filename="$(find mobile_robot)/urdf/ros2_control_real.xacro"/>
+
+</robot>

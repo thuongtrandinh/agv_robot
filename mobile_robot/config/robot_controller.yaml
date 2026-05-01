@@ -1,0 +1,58 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 100
+    use_sim_time: false
+
+    # Load controllers
+    joint_broad:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    diff_cont:
+      type: diff_drive_controller/DiffDriveController
+
+
+joint_broad:
+  ros__parameters:
+    # Synchronize joint state publishing with odometry rate (15Hz)
+    # This prevents visual lag between robot body and wheels in RViz
+    publish_rate: 15.0
+
+
+diff_cont:
+  ros__parameters:
+
+    # Wheel joints
+    left_wheel_names: ["left_wheel_joint"]
+    right_wheel_names: ["right_wheel_joint"]
+
+    # Physical parameters
+    wheel_separation: 0.46
+    wheel_radius: 0.05
+
+    # Odometry + TF
+    # Disable all odom publishing (motor_odom will provide it)
+    publish_odom: false
+    publish_odometry: false
+    enable_odom_tf: false
+
+    # Input/output
+    cmd_vel_timeout: 0.5
+    publish_rate: 50.0
+    cmd_vel: cmd_vel
+
+    # Limits
+    linear:
+      x:
+        has_velocity_limits: true
+        max_velocity: 2.0
+        min_velocity: -2.0
+
+    angular:
+      z:
+        has_velocity_limits: true
+        max_velocity: 2.0
+        min_velocity: -2.0
+
+    # Covariances
+    pose_covariance_diagonal:  [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 1000.0]
+    twist_covariance_diagonal: [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 1000.0]

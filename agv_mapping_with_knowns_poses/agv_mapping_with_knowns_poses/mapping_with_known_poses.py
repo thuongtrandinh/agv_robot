@@ -2,6 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import OccupancyGrid, MapMetaData
 from tf2_ros import Buffer, TransformListener
@@ -110,7 +111,16 @@ class MappingWithKnownPoses(Node):
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
-        self.scan_sub = self.create_subscription(LaserScan, "scan", self.scanCallback, 10)
+        
+        # QoS for sensor data (BEST_EFFORT for LaserScan)
+        sensor_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+        
+        self.scan_sub = self.create_subscription(LaserScan, "scan", self.scanCallback, sensor_qos)
         self.map_pub = self.create_publisher(OccupancyGrid, "map", 1)
         self.timer = self.create_timer(1.0, self.timerCallback)
 

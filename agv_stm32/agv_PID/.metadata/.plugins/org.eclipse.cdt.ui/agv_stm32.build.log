@@ -1,0 +1,17 @@
+12:27:34 **** Incremental Build of configuration Debug for project agv_stm32 ****
+make -j12 all 
+arm-none-eabi-g++ "../Core/Src/mainpp.cpp" -mcpu=cortex-m4 -std=gnu++14 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F411xE -c -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -fno-exceptions -fno-rtti -fno-use-cxa-atexit -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/mainpp.d" -MT"Core/Src/mainpp.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/mainpp.o"
+arm-none-eabi-g++ -o "agv_stm32.elf" @"objects.list"   -mcpu=cortex-m4 -T"/home/thuong/DAIHOC/agv_stm32/STM32F411VETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="agv_stm32.map" -Wl,--gc-sections -static -u _printf_float --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -lstdc++ -lsupc++ -Wl,--end-group
+Finished building target: agv_stm32.elf
+ 
+arm-none-eabi-size  agv_stm32.elf 
+arm-none-eabi-objdump -h -S agv_stm32.elf  > "agv_stm32.list"
+   text	   data	    bss	    dec	    hex	filename
+  35804	    468	   2844	  39116	   98cc	agv_stm32.elf
+Finished building: default.size.stdout
+ 
+Finished building: agv_stm32.list
+ 
+
+12:27:34 Build Finished. 0 errors, 0 warnings. (took 335ms)
+

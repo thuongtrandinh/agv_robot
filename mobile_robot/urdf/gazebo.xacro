@@ -87,6 +87,7 @@
         <render_engine>ogre2</render_engine>
     </plugin>
     </gazebo>
+    
     <!-- IMU -->
   <gazebo reference="imu_link">
     <sensor name="imu" type="imu">

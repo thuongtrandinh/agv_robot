@@ -121,7 +121,7 @@ MappingWithKnownPoses::MappingWithKnownPoses(const std::string &name)
     map_.info.height = std::round(height / map_.info.resolution);
     map_.info.origin.position.x = - std::round(width / 2.0);
     map_.info.origin.position.y = - std::round(height / 2.0);
-    map_.header.frame_id = "odom";
+    map_.header.frame_id = "map";
 
     // Init map with prior probability
     map_.data = std::vector<int8_t>(map_.info.height * map_.info.width, -1);
@@ -129,10 +129,25 @@ MappingWithKnownPoses::MappingWithKnownPoses(const std::string &name)
 
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+
+    // Mapping activation control
+    declare_parameter<double>("min_travel_distance", 0.5);  // Minimum distance before starting mapping
+    declare_parameter<double>("startup_delay", 3.0);        // Delay before checking travel distance
+    min_travel_distance_ = get_parameter("min_travel_distance").as_double();
+    startup_delay_ = get_parameter("startup_delay").as_double();
+    mapping_active_ = false;
+    total_distance_ = 0.0;
+    startup_time_ = this->now();
+    
+    // Use a larger QoS queue and best-effort reliability for sensor data
+    rclcpp::QoS scan_qos(rclcpp::KeepLast(50));
+    scan_qos.best_effort();
     scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
-        "scan", 10, std::bind(&MappingWithKnownPoses::scanCallback, this, _1));
+        "scan", scan_qos, std::bind(&MappingWithKnownPoses::scanCallback, this, _1));
     map_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>("map", 1);
     timer_ = create_wall_timer(1s, std::bind(&MappingWithKnownPoses::timerCallback, this));
+    RCLCPP_INFO(this->get_logger(), "Mapping node started. Waiting %.1f seconds and %.2f meters travel before activating mapping...", 
+                startup_delay_, min_travel_distance_);
 }
 
 void MappingWithKnownPoses::scanCallback(const sensor_msgs::msg::LaserScan &scan)
@@ -140,11 +155,12 @@ void MappingWithKnownPoses::scanCallback(const sensor_msgs::msg::LaserScan &scan
     geometry_msgs::msg::TransformStamped t;
     try
     {
+        // Sử dụng map_.header.frame_id ("map") làm frame đích
         t = tf_buffer_->lookupTransform(map_.header.frame_id, scan.header.frame_id, tf2::TimePointZero);
     }
     catch (const tf2::TransformException &ex)
     {
-        RCLCPP_ERROR(get_logger(), "Unable to transform between /odom and /base_footprint");
+        RCLCPP_ERROR(get_logger(), "Unable to transform between '%s' and '%s': %s", map_.header.frame_id.c_str(), scan.header.frame_id.c_str(), ex.what());
         return;
     }
 
@@ -154,6 +170,45 @@ void MappingWithKnownPoses::scanCallback(const sensor_msgs::msg::LaserScan &scan
     {
         RCLCPP_ERROR(get_logger(), "The robot is out of the Map!");
         return;
+    }
+    
+    // ========================================
+    // Mapping activation logic (skip initial unstable period)
+    // ========================================
+    if (!mapping_active_)
+    {
+        // Check startup delay
+        double elapsed = (this->now() - startup_time_).seconds();
+        if (elapsed < startup_delay_)
+        {
+            return;  // Skip scan during startup delay
+        }
+        
+        // Calculate travel distance
+        if (last_pose_x_ == 0.0 && last_pose_y_ == 0.0)
+        {
+            // First pose after delay
+            last_pose_x_ = t.transform.translation.x;
+            last_pose_y_ = t.transform.translation.y;
+            return;
+        }
+        
+        double dx = t.transform.translation.x - last_pose_x_;
+        double dy = t.transform.translation.y - last_pose_y_;
+        double dist = std::sqrt(dx * dx + dy * dy);
+        total_distance_ += dist;
+        
+        last_pose_x_ = t.transform.translation.x;
+        last_pose_y_ = t.transform.translation.y;
+        
+        if (total_distance_ < min_travel_distance_)
+        {
+            return;  // Skip scan until minimum travel distance reached
+        }
+        
+        // Activate mapping
+        mapping_active_ = true;
+        RCLCPP_INFO(get_logger(), "✅ Mapping ACTIVATED after %.2f meters travel. Odometry is now stable.", total_distance_);
     }
 
     tf2::Quaternion q(t.transform.rotation.x,

@@ -23,10 +23,10 @@ diff_cont:
     wheel_radius: 0.05       # m - wheel radius
 
     # TF and Odometry Settings
-    publish_odom: true
+    publish_odom: true            # Still publish /diff_cont/odom topic
     odom_frame_id: "odom"
     base_frame_id: "base_footprint"
-    enable_odom_tf: true
+    enable_odom_tf: false          # CRITICAL: FALSE - Let EKF publish odom→base_footprint TF after sensor fusion!
 
     # CRITICAL: Accept unstamped cmd_vel
     cmd_vel_timeout: 0.5

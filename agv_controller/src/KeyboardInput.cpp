@@ -1,10 +1,10 @@
-
 #include "agv_controller/KeyboardInput.h"
 #include <iostream>
 #include <csignal>
 #include <atomic>
+#include <cmath>
 
-// Forward declaration for signal handler
+// Global pointer for signal handler
 static KeyboardInput* g_keyboard_input_ptr = nullptr;
 
 void sigintHandler(int signum)
@@ -17,11 +17,14 @@ void sigintHandler(int signum)
     std::exit(0);
 }
 
-
-
 KeyboardInput::KeyboardInput() : Node("keyboard_input"), running_(true)
 {
-    cmd_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>("/diff_cont/cmd_vel", 10);
+    cmd_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>(
+        "/diff_cont/cmd_vel", 10);
+
+    // Initialize speeds
+    linear_speed_ = 0.0;
+    angular_speed_ = 0.0;
 
     // Set terminal to raw mode
     tcgetattr(STDIN_FILENO, &oldt_);
@@ -29,12 +32,21 @@ KeyboardInput::KeyboardInput() : Node("keyboard_input"), running_(true)
     newt.c_lflag &= ~(ICANON | ECHO);
     tcsetattr(STDIN_FILENO, TCSANOW, &newt);
 
-    // Set global pointer for signal handler
+    // Set global pointer for SIGINT
     g_keyboard_input_ptr = this;
     std::signal(SIGINT, sigintHandler);
 
     input_thread_ = std::thread(&KeyboardInput::keyboardLoop, this);
-    RCLCPP_INFO(this->get_logger(), "Keyboard teleop started. Use WASD to move, Q to quit. Press Ctrl+C to stop robot and exit.");
+
+    RCLCPP_INFO(
+        this->get_logger(),
+        "Keyboard teleop started.\n"
+        "W/S = tăng / giảm tốc tiến\n"
+        "A/D = tăng / giảm tốc quay\n"
+        "C = dừng robot\n"
+        "Q = thoát\n"
+        "Ctrl+C = dừng robot và thoát."
+    );
 }
 
 KeyboardInput::~KeyboardInput()
@@ -42,46 +54,65 @@ KeyboardInput::~KeyboardInput()
     running_ = false;
     if (input_thread_.joinable())
         input_thread_.join();
+
     tcsetattr(STDIN_FILENO, TCSANOW, &oldt_);
-    // Reset global pointer
     g_keyboard_input_ptr = nullptr;
 }
 
 void KeyboardInput::keyboardLoop()
 {
     char c;
+
+    const double fixed_linear_speed = 0.3;   // Vận tốc tiến/lùi cố định
+    const double fixed_angular_speed = 0.3;  // Vận tốc xoay cố định
+
     while (running_)
     {
         c = getchar();
-        if (c == 'q' || c == 'Q')
-        {
+
+        if (c == 'q' || c == 'Q') {
+            publishCmd(0.0, 0.0); // Dừng robot trước khi thoát
             running_ = false;
             break;
         }
+
         switch (c)
         {
         case 'w':
         case 'W':
-            publishCmd(0.5, 0.0); // Tiến
+            linear_speed_ = fixed_linear_speed;
             break;
+
         case 's':
         case 'S':
-            publishCmd(-0.5, 0.0); // Lùi
+            linear_speed_ = -fixed_linear_speed;
             break;
+
         case 'a':
         case 'A':
-            publishCmd(0.0, 1.0); // Quay trái
+            angular_speed_ = fixed_angular_speed;
             break;
+
         case 'd':
         case 'D':
-            publishCmd(0.0, -1.0); // Quay phải
+            angular_speed_ = -fixed_angular_speed;
             break;
-        case ' ':
-            publishCmd(0.0, 0.0); // Dừng
+
+        case 'c':
+        case 'C':
+            linear_speed_  = 0.0;
+            angular_speed_ = 0.0;
             break;
+
         default:
             break;
         }
+
+        publishCmd(linear_speed_, angular_speed_);
+
+        std::cout << "\rLinear: " << linear_speed_
+                  << " m/s | Angular: " << angular_speed_
+                  << " rad/s     " << std::flush;
     }
 }
 
@@ -96,4 +127,3 @@ void KeyboardInput::publishCmd(double linear, double angular)
 
     cmd_pub_->publish(msg);
 }
-

@@ -1,45 +1,88 @@
+# ============================================
+# AMCL CONFIG CHO ROBOT THẬT
+# Adaptive Monte Carlo Localization với LiDAR
+# ============================================
 amcl:
   ros__parameters:
-    use_sim_time: True
-    alpha1: 0.2
-    alpha2: 0.2
-    alpha3: 0.2
-    alpha4: 0.2
-    base_frame_id: "base_footprint"
-    beam_skip_distance: 0.5
-    beam_skip_error_threshold: 0.9
-    beam_skip_threshold: 0.3
-    do_beamskip: false
+    # === QUAN TRỌNG: Robot thật ===
+    use_sim_time: false
+    
+    # === TF FRAMES ===
     global_frame_id: "map"
-    lambda_short: 0.1
-    laser_likelihood_max_dist: 2.0
-    laser_max_range: 100.0
-    laser_min_range: -1.0
-    laser_model_type: "likelihood_field"
-    max_beams: 60
-    max_particles: 2000
-    min_particles: 500
     odom_frame_id: "odom"
-    pf_err: 0.05
-    pf_z: 0.99
-    recovery_alpha_fast: 0.0
-    recovery_alpha_slow: 0.0
-    resample_interval: 1
-    robot_model_type: "nav2_amcl::DifferentialMotionModel"
-    save_pose_rate: 0.5
-    sigma_hit: 0.2
+    base_frame_id: "base_footprint"
+    
+    # === TF BROADCAST ===
+    # TẮT nếu dùng EKF để publish TF map->odom
+    # BẬT nếu AMCL là nguồn localization duy nhất
     tf_broadcast: true
-    transform_tolerance: 1.0
-    update_min_a: 0.2
-    update_min_d: 0.25
-    z_hit: 0.5
-    z_max: 0.05
-    z_rand: 0.5
-    z_short: 0.05
-    scan_topic: scan
+    transform_tolerance: 0.5  # Giảm để TF chặt chẽ hơn
+    
+    # === INITIAL POSE ===
     set_initial_pose: true
     initial_pose:
       x: 0.0
       y: 0.0
       z: 0.0
       yaw: 0.0
+    
+    # === ODOMETRY MODEL ===
+    # Differential drive robot
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"
+    
+    # Motion noise - Giảm để particles hội tụ ổn định hơn
+    alpha1: 0.05   # Rotation noise từ rotation
+    alpha2: 0.05   # Rotation noise từ translation
+    alpha3: 0.05   # Translation noise từ translation
+    alpha4: 0.05   # Translation noise từ rotation
+    alpha1: 0.15   # Rotation noise từ rotation (Tăng lên cho robot thật)
+    alpha2: 0.15   # Rotation noise từ translation
+    alpha3: 0.15   # Translation noise từ translation
+    alpha4: 0.15   # Translation noise từ rotation
+    
+    # === UPDATE THRESHOLDS ===
+    # Robot phải di chuyển bao nhiêu trước khi update
+    update_min_d: 0.1     # 20cm di chuyển (giảm update frequency)
+    update_min_a: 0.056     # ~17 độ xoay
+    update_min_d: 0.2     # Tăng lên 20cm để giảm tần suất nhảy TF
+    update_min_a: 0.1     # Tăng lên ~6 độ
+    resample_interval: 2  # Resample mỗi 2 updates
+    
+    # Giới hạn tần số update tối đa
+    min_update_rate: 10.0   # Tối đa 1Hz update
+    max_update_rate: 20.0   # Nhưng cho phép lên đến 5Hz khi cần
+    
+    # === LASER MODEL ===
+    laser_model_type: "likelihood_field"
+    scan_topic: "scan"           # Topic LiDAR của robot thật
+    laser_max_range: 5.0        # Phạm vi tối đa LiDAR (meters)
+    laser_min_range: 0.15        # Phạm vi tối thiểu
+    max_beams: 360                # Số beams sử dụng
+    
+    # Laser probabilities - cân bằng để không jump
+    z_hit: 0.7               # Probability of hitting obstacle
+    z_rand: 0.2              # Random noise
+    z_short: 0.05            # Short reading
+    z_max: 0.05              # Max range reading
+    sigma_hit: 0.2           # Std dev of hit
+    laser_likelihood_max_dist: 2.0
+    
+    # Beam skip (tăng performance)
+    do_beamskip: false
+    beam_skip_distance: 0.5
+    beam_skip_threshold: 0.3
+    beam_skip_error_threshold: 0.9
+    
+    # === PARTICLES ===
+    min_particles: 200     # Giảm để tính toán nhanh hơn
+    max_particles: 1000    # Giảm overhead
+    pf_err: 0.1            # Tăng tolerance (chấp nhận sai số nhiều hơn)
+    pf_z: 0.95             # Giảm confidence yêu cầu
+    
+    # === RECOVERY ===
+    # Tắt để không random particles khi mất track
+    recovery_alpha_slow: 0.0
+    recovery_alpha_fast: 0.0
+    
+    # === SAVE POSE ===
+    save_pose_rate: 0.5

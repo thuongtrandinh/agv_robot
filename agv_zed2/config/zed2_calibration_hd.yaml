@@ -1,0 +1,57 @@
+%YAML 1.0
+---
+left_camera:
+  camera_name: "zed2_left"
+  image_width: 1280
+  image_height: 720
+  camera_matrix:
+    rows: 3
+    cols: 3
+    data: [534.74, 0.0, 642.798,
+           0.0, 535.54, 353.931,
+           0.0, 0.0, 1.0]
+  distortion_model: "plumb_bob"
+  distortion_coefficients:
+    rows: 1
+    cols: 5
+    data: [-0.0957495374145626, 0.10817317124824982, 0.00047804393160613836, -0.00015651000554147752, -0.05351520230593637]
+  rectification_matrix:
+    rows: 3
+    cols: 3
+    data: [1.0, 0.0, 0.0,
+           0.0, 1.0, 0.0,
+           0.0, 0.0, 1.0]
+  projection_matrix:
+    rows: 3
+    cols: 4
+    data: [534.74, 0.0, 642.798, 0.0,
+           0.0, 535.54, 353.931, 0.0,
+           0.0, 0.0, 1.0, 0.0]
+
+right_camera:
+  camera_name: "zed2_right"
+  image_width: 1280
+  image_height: 720
+  camera_matrix:
+    rows: 3
+    cols: 3
+    data: [533.907, 0.0, 650.617,
+           0.0, 534.799, 364.786,
+           0.0, 0.0, 1.0]
+  distortion_model: "plumb_bob"
+  distortion_coefficients:
+    rows: 1
+    cols: 5
+    data: [-0.03942106614701886, 0.008178487377983802, -2.4707464904009555e-05, 0.000220930521052984, -0.004732473107977569]
+  rectification_matrix:
+    rows: 3
+    cols: 3
+    data: [1.0, 0.0, 0.0,
+           0.0, 1.0, 0.0,
+           0.0, 0.0, 1.0]
+  projection_matrix:
+    rows: 3
+    cols: 4
+    data: [533.907, 0.0, 650.617, -64.48,   # baseline ≈120mm * fx ≈ 64.48
+           0.0, 534.799, 364.786, 0.0,
+           0.0, 0.0, 1.0, 0.0]

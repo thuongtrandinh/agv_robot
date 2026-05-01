@@ -1,0 +1,187 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <world name="room_20x20">
+    <physics type="ode">
+      <max_step_size>0.01</max_step_size>
+    </physics>
+
+    <!-- Ground plane - inline definition -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Four enclosing walls forming a 20m x 20m square centered at (0,0) -->
+    <!-- Wall thickness 0.2m, height 2.5m -->
+
+    <!-- North wall (+Y) -->
+    <model name="wall_north">
+      <static>true</static>
+      <link name="link">
+        <pose>0 10.1 1.25 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>20.4 0.2 2.5</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>20.4 0.2 2.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- South wall (-Y) -->
+    <model name="wall_south">
+      <static>true</static>
+      <link name="link">
+        <pose>0 -10.1 1.25 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>20.4 0.2 2.5</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>20.4 0.2 2.5</size>
+            </box>
+          </geometry>
+        </visual>
+      </link>
+    </model>
+
+    <!-- East wall (+X) -->
+    <model name="wall_east">
+      <static>true</static>
+      <link name="link">
+        <pose>10.1 0 1.25 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.2 20.4 2.5</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.2 20.4 2.5</size>
+            </box>
+          </geometry>
+        </visual>
+      </link>
+    </model>
+
+    <!-- West wall (-X) -->
+    <model name="wall_west">
+      <static>true</static>
+      <link name="link">
+        <pose>-10.1 0 1.25 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.2 20.4 2.5</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.2 20.4 2.5</size>
+            </box>
+          </geometry>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Small objects near walls: use existing Ball model URIs if available -->
+    <model name="ball_north_1">
+      <static>true</static>
+      <include>
+        <uri>model://aws_robomaker_residential_Ball_01</uri>
+      </include>
+      <pose> -8.5 9.0 0.32 0 0 0</pose>
+    </model>
+
+    <model name="ball_north_2">
+      <static>true</static>
+      <include>
+        <uri>model://aws_robomaker_residential_Ball_01</uri>
+      </include>
+      <pose> 0.0 9.2 0.32 0 0 0</pose>
+    </model>
+
+    <model name="box_east_1">
+      <static>true</static>
+      <include>
+        <uri>model://aws_robomaker_residential_Ball_01</uri>
+      </include>
+      <pose>9.0 -6.0 0.32 0 0 0</pose>
+    </model>
+
+    <model name="ball_west_1">
+      <static>true</static>
+      <include>
+        <uri>model://aws_robomaker_residential_Ball_01</uri>
+      </include>
+      <pose>-9.2 5.5 0.32 0 0 0</pose>
+    </model>
+
+    <model name="ball_south_1">
+      <static>true</static>
+      <include>
+        <uri>model://aws_robomaker_residential_Ball_01</uri>
+      </include>
+      <pose> 6.0 -9.2 0.32 0 0 0</pose>
+    </model>
+
+    <!-- Sun / lighting - inline definition -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+  </world>
+</sdf>

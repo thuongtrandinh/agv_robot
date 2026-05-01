@@ -28,9 +28,7 @@ class ScanRepublisher(Node):
         self.get_logger().info('Publishing to: /scan_fixed')
 
     def scan_callback(self, msg):
-        # Create a new message with the corrected frame_id
         fixed_msg = LaserScan()
-        
         # Copy all data from the original message
         fixed_msg.header = msg.header
         fixed_msg.angle_min = msg.angle_min
@@ -42,11 +40,12 @@ class ScanRepublisher(Node):
         fixed_msg.range_max = msg.range_max
         fixed_msg.ranges = msg.ranges
         fixed_msg.intensities = msg.intensities
-        
+
         # Fix the frame_id
         fixed_msg.header.frame_id = "laser"
-        
-        # Publish the fixed message
+        # Fix the timestamp: set to current ROS time
+        fixed_msg.header.stamp = self.get_clock().now().to_msg()
+
         self.publisher.publish(fixed_msg)
 
 def main(args=None):
